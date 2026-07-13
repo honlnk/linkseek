@@ -3,29 +3,29 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: web-fetch-mysql
+    container_name: linkseek-mysql
     restart: unless-stopped
     ports:
       - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: rootpass_dev_only
-      MYSQL_DATABASE: webfetch
-      MYSQL_USER: webfetch
-      MYSQL_PASSWORD: webfetch_dev_pass
+      MYSQL_DATABASE: linkseek
+      MYSQL_USER: linkseek
+      MYSQL_PASSWORD: linkseek_dev_pass
     volumes:
       - mysql-data:/var/lib/mysql
     command: --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "webfetch", "-pwebfetch_dev_pass"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "linkseek", "-plinkseek_dev_pass"]
       interval: 5s
       timeout: 5s
       retries: 10
     networks:
-      - web-fetch-net
+      - linkseek-net
 
   searxng:
     image: searxng/searxng:latest
-    container_name: web-fetch-searxng
+    container_name: linkseek-searxng
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -35,10 +35,10 @@ services:
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080/
     networks:
-      - web-fetch-net
+      - linkseek-net
 
 networks:
-  web-fetch-net:
+  linkseek-net:
     driver: bridge
 
 volumes:

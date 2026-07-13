@@ -35,7 +35,7 @@ app.use('/api', createAdminRouter());
 
 function createServer() {
   const server = new McpServer(
-    { name: 'web-fetch', version: '0.1.0' },
+    { name: 'linkseek', version: '0.1.0' },
     { capabilities: { logging: {} } },
   );
   registerTools(server);
@@ -112,7 +112,7 @@ app.get(/^(?!\/(api|mcp)).*/, (_req, res, next) => {
 });
 
 app.listen(config.PORT, () => {
-  logger.info(`web-fetch-mcp 服务已启动: http://localhost:${config.PORT}`);
+  logger.info(`linkseek 服务已启动: http://localhost:${config.PORT}`);
   logger.info(`MCP 端点: http://localhost:${config.PORT}/mcp`);
   logger.info(`管理后台: http://localhost:${config.PORT}/`);
 });

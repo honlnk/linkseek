@@ -1,4 +1,4 @@
-# web-fetch-mcp
+# linkseek
 
 自托管的远程 MCP 服务，通过 HTTP 提供「联网搜索 + 网页获取」能力给 AI 编程工具（Claude Code / Cursor 等），并配套网页端管理后台。
 
@@ -83,7 +83,7 @@ pnpm web:dev
    ```json
    {
      "mcpServers": {
-       "web-fetch": {
+       "linkseek": {
          "url": "http://localhost:3000/mcp",
          "headers": { "Authorization": "Bearer YOUR_API_KEY" }
        }

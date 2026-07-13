@@ -33,7 +33,7 @@ async function handleLogin() {
 
 <template>
   <div class="login-container">
-    <NCard class="login-card" title="web-fetch-mcp 管理后台">
+    <NCard class="login-card" title="linkseek 管理后台">
       <NForm @keyup.enter="handleLogin">
         <NFormItem label="管理员密码">
           <NInput

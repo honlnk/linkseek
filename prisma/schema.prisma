@@ -1,4 +1,4 @@
-// Prisma schema for web-fetch-mcp
+// Prisma schema for linkseek
 // 数据库：MySQL 8.0（独立 Docker 容器）
 
 datasource db {

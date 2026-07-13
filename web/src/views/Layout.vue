@@ -66,7 +66,7 @@ async function handleLogout() {
       @collapse="collapsed = true"
       @expand="collapsed = false"
     >
-      <div class="logo">{{ collapsed ? 'W' : 'web-fetch-mcp' }}</div>
+      <div class="logo">{{ collapsed ? 'L' : 'linkseek' }}</div>
       <NMenu
         :collapsed="collapsed"
         :collapsed-width="64"

@@ -16,7 +16,7 @@ const ssrfAgent = new Agent({
 });
 
 const COMMON_HEADERS: Record<string, string> = {
-  'User-Agent': 'web-fetch-mcp/0.1 (+https://github.com/web-fetch-mcp)',
+  'User-Agent': 'linkseek/0.1 (+https://github.com/linkseek)',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
 };
