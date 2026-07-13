@@ -18,7 +18,7 @@ const schema = z.object({
   DATABASE_URL: z.string().optional(),
   ADMIN_PASSWORD: z.string().optional(),
   SESSION_SECRET: z.string().optional(),
-  API_KEYS: z.string().transform((val, ctx): KeyRecord[] => {
+  API_KEYS: z.string().default('').transform((val, ctx): KeyRecord[] => {
     const trimmed = val.trim();
     if (trimmed.length === 0) return [];
     try {
@@ -64,6 +64,10 @@ const schema = z.object({
     .optional()
     .transform((v) => v !== 'false'),
   NODE_ENV: z.string().optional(),
+  COOKIE_SECURE: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
 });
 
 const parsed = schema.safeParse(process.env);

@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.log
 .env
+.env.production
 .DS_Store
 searxng-data/
 package-lock.json
@@ -12,3 +13,4 @@ web/*.tsbuildinfo
 web/vite.config.d.ts
 web/vite.config.js
 .zcode/plans/
+opencode.json

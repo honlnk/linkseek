@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+dist
+**/dist
+src/generated
+.env
+.env.production
+.env.local
+.git
+.gitignore
+.DS_Store
+*.log
+searxng-data
+.zcode
+docs
+web-fetch-mcp-server-design.md
+README.md

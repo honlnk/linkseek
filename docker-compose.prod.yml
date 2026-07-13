@@ -1,0 +1,66 @@
+# 生产环境编排。
+# 与 docker-compose.yml（本地开发）的区别：
+# - app 容器：构建并运行 Node.js 应用
+# - mysql/searxng：不映射宿主机端口（仅容器间通信，安全）
+# - 双网络：linkseek-net（内部通信）+ honlnk-gateway-net（让 gateway 反代）
+#
+# 使用方式：docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  app:
+    build: .
+    container_name: linkseek-app
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      mysql:
+        condition: service_healthy
+      searxng:
+        condition: service_started
+    networks:
+      - linkseek-net
+      - honlnk-gateway-net
+    # 不映射端口 —— 由 honlnk-gateway 反代访问
+
+  mysql:
+    image: mysql:8.0
+    container_name: linkseek-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: linkseek
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - linkseek-net
+    # 不映射端口 —— 仅容器间访问
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: linkseek-searxng
+    restart: unless-stopped
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - searxng-data:/etc/searxng/data
+    environment:
+      - SEARXNG_BASE_URL=http://linkseek-searxng:8080/
+    networks:
+      - linkseek-net
+    # 不映射端口 —— 仅容器间访问
+
+networks:
+  linkseek-net:
+    driver: bridge
+  honlnk-gateway-net:
+    external: true   # 复用已有的 gateway 网络
+
+volumes:
+  mysql-data:
+  searxng-data:
