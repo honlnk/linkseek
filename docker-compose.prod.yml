@@ -1,14 +1,17 @@
 # 生产环境编排。
+# app 容器直接拉取已发布到 Docker Hub 的镜像（honlnk/linkseek:latest），
+# 服务器上无需构建。若需本地构建，把 app.image 换成 app.build: .
+#
 # 与 docker-compose.yml（本地开发）的区别：
-# - app 容器：构建并运行 Node.js 应用
+# - app 容器：拉取镜像运行（Dockerfile 仍保留在仓库里供本地/CI 构建用）
 # - mysql/searxng：不映射宿主机端口（仅容器间通信，安全）
 # - 双网络：linkseek-net（内部通信）+ honlnk-gateway-net（让 gateway 反代）
 #
-# 使用方式：docker compose -f docker-compose.prod.yml up -d --build
+# 使用方式：docker compose -f docker-compose.prod.yml up -d
 
 services:
   app:
-    build: .
+    image: honlnk/linkseek:latest
     container_name: linkseek-app
     restart: unless-stopped
     env_file: .env.production

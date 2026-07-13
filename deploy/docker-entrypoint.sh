@@ -2,7 +2,7 @@
 set -e
 
 echo "==> 执行数据库迁移..."
-prisma migrate deploy
+./node_modules/.bin/prisma migrate deploy
 
 echo "==> 初始化管理员账号（如果设置了 ADMIN_PASSWORD）..."
 # 用 CJS 内联脚本跑 seed，无需 tsx
