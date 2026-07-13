@@ -23,3 +23,16 @@ server:
 
 ui:
   static_use_hash: true
+
+outgoing:
+  # 服务器在国内，通过宿主机 mihomo 代理访问 Google/DuckDuckGo 等境外搜索引擎
+  # 依赖 docker0 IP（172.17.0.1）+ mihomo allow-lan: true
+  proxies:
+    all://: http://172.17.0.1:7890
+  # 内部容器不走代理
+  no_proxy:
+    - localhost
+    - 127.0.0.1
+    - linkseek-app
+    - linkseek-mysql
+    - linkseek-searxng

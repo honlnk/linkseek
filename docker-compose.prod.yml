@@ -56,6 +56,14 @@ services:
       - searxng-data:/etc/searxng/data
     environment:
       - SEARXNG_BASE_URL=http://linkseek-searxng:8080/
+      # 服务器在国内，SearXNG 需通过宿主机 mihomo 代理访问 Google/DuckDuckGo 等
+      # 依赖 mihomo 的 allow-lan: true（端口监听 0.0.0.0:7890）
+      - HTTP_PROXY=http://172.17.0.1:7890
+      - HTTPS_PROXY=http://172.17.0.1:7890
+      - NO_PROXY=localhost,127.0.0.1,linkseek-app,linkseek-mysql,linkseek-searxng
+    extra_hosts:
+      # 确保 docker0 IP 在容器内可解析（部分场景需要）
+      - "host.docker.internal:172.17.0.1"
     networks:
       - linkseek-net
     # 不映射端口 —— 仅容器间访问
