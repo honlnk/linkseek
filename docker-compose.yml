@@ -1,0 +1,46 @@
+# 本地开发用的依赖容器（SearXNG + MySQL）。
+# 生产部署配置（含 app 容器、nginx 反代）在后续部署阶段补齐。
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: web-fetch-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass_dev_only
+      MYSQL_DATABASE: webfetch
+      MYSQL_USER: webfetch
+      MYSQL_PASSWORD: webfetch_dev_pass
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "webfetch", "-pwebfetch_dev_pass"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - web-fetch-net
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: web-fetch-searxng
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - searxng-data:/etc/searxng/data
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+    networks:
+      - web-fetch-net
+
+networks:
+  web-fetch-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  searxng-data:

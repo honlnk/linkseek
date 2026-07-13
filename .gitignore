@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.log
+.env
+.DS_Store
+searxng-data/
+package-lock.json
+src/generated/
+web/dist/
+web/node_modules/
+web/*.tsbuildinfo
+web/vite.config.d.ts
+web/vite.config.js
+.zcode/plans/

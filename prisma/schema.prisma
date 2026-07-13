@@ -1,0 +1,56 @@
+// Prisma schema for web-fetch-mcp
+// 数据库：MySQL 8.0（独立 Docker 容器）
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma-client"
+}
+
+/// API Key —— 每个代表一个使用方（如「我的 Claude Code」「老王」）
+model ApiKey {
+  id          String    @id @default(cuid())
+  /// Key 名称，用于展示和统计
+  name        String
+  /// 明文 key 的 SHA-256 哈希，查询索引用
+  tokenHash   String    @unique
+  /// 明文 key 前 8 位，列表展示用（如 "wf_1a2b3c"）
+  tokenPrefix String
+  /// 是否启用
+  enabled     Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  usages UsageLog[]
+
+  @@index([enabled])
+}
+
+/// 用量记录 —— 每次 MCP 工具调用记一条
+model UsageLog {
+  id        BigInt   @id @default(autoincrement())
+  keyId     String
+  /// 被调用的工具名：web_search / web_fetch / web_search_and_fetch
+  toolName  String
+  /// 调用是否成功
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  apiKey ApiKey @relation(fields: [keyId], references: [id], onDelete: Cascade)
+
+  @@index([keyId, createdAt])
+  @@index([createdAt])
+}
+
+/// 管理员账号（单一管理员，固定 id=1）
+model AdminUser {
+  id           Int      @id @default(1)
+  /// argon2 哈希后的密码
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
