@@ -17,19 +17,6 @@ const PORT = Number(process.env.PORT ?? 9100);
 const app = express();
 app.use(express.json());
 
-/** 浏览器单例（常驻，避免每次请求冷启动） */
-let browser = null;
-
-async function getBrowser() {
-  if (!browser) {
-    browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    });
-  }
-  return browser;
-}
-
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
@@ -45,24 +32,33 @@ app.post('/render', async (req, res) => {
   let safeIp;
   try {
     safeUrl = validateUrl(url);
+    // 字面量 IP 不需要 DNS 锁定；域名才需要解析 + 锁定防 rebinding
     safeIp = await resolveSafeIp(safeUrl.hostname);
   } catch (err) {
     return res.status(403).json({ error: err.message });
   }
 
-  const port = safeUrl.port || (safeUrl.protocol === 'https:' ? '443' : '80');
-  // 用安全 IP 直连，带原 hostname 作为 Host 头（绕过 DNS rebinding）
-  const directUrl = `${safeUrl.protocol}//${safeIp}:${port}${safeUrl.pathname}${safeUrl.search}`;
+  const renderTimeout = Math.min(Number(timeout) || 30_000, 60_000);
+  // 字面量 IP 直接用原 URL；域名用 --host-resolver-rules 锁定到已校验的安全 IP
+  // （浏览器用真实域名访问，HTTPS 证书正常校验；DNS 解析被锁定防 rebinding）
+  const isLiteralIp = safeUrl.hostname === safeIp;
+  const launchArgs = isLiteralIp
+    ? ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    : [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        `--host-resolver-rules=MAP ${safeUrl.hostname} ${safeIp}`,
+      ];
 
+  let browser;
   let page;
   try {
-    const b = await getBrowser();
-    page = await b.newPage({
-      extraHTTPHeaders: { Host: safeUrl.hostname },
-    });
-    await page.goto(directUrl, {
+    browser = await chromium.launch({ headless: true, args: launchArgs });
+    page = await browser.newPage();
+    await page.goto(safeUrl.href, {
       waitUntil: 'networkidle',
-      timeout: Math.min(Number(timeout) || 30_000, 60_000),
+      timeout: renderTimeout,
     });
     const html = await page.content();
     return res.json({ html });
@@ -72,6 +68,7 @@ app.post('/render', async (req, res) => {
     });
   } finally {
     if (page) await page.close().catch(() => {});
+    if (browser) await browser.close().catch(() => {});
   }
 });
 
@@ -79,12 +76,10 @@ const server = app.listen(PORT, () => {
   console.log(`browser-fetch listening on :${PORT}`);
 });
 
-// 优雅关闭：关闭浏览器进程
-async function shutdown() {
+// 优雅关闭
+function shutdown() {
   console.log('browser-fetch shutting down...');
-  server.close();
-  if (browser) await browser.close().catch(() => {});
-  process.exit(0);
+  server.close(() => process.exit(0));
 }
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
