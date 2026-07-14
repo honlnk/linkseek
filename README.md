@@ -5,7 +5,7 @@
 ## 已实现功能
 
 ### MCP 服务（给 AI 工具调用）
-- ✅ 3 个 MCP 工具：`web_search` / `web_fetch` / `web_search_and_fetch`
+- ✅ 4 个 MCP 工具：`web_search` / `web_fetch` / `web_search_and_fetch` / `web_fetch_render`
 - ✅ Streamable HTTP 传输（单一 `/mcp` 端点）
 - ✅ API Key 鉴权（Bearer Token）
 - ✅ SSRF 防护（IP 范围拦截 + DNS rebinding 防护 + 重定向逐跳校验）
@@ -113,12 +113,14 @@ curl http://localhost:3000/mcp \
 | `web_search` | 联网搜索 | `query`, `maxResults`, `timeRange`(day/month/year), `language` |
 | `web_fetch` | 获取网页正文（Markdown） | `url` |
 | `web_search_and_fetch` | 搜索 + 批量获取正文 | `query`, `fetchCount`, `searchMaxResults` |
+| `web_fetch_render` | 无头浏览器渲染获取 JS 动态页面（SPA），返回 Markdown | `url` |
 
 ## 安全说明
 
 - **API Key**：以 SHA-256 哈希存储在数据库，明文仅在创建时返回一次
 - **管理员密码**：argon2id 哈希存储
 - **SSRF 防护**：阻断 RFC1918 私有地址、`169.254.169.254`（云元数据）、loopback 等危险范围；自定义 DNS lookup 固定解析结果防 rebinding；重定向逐跳重新校验
+- **浏览器渲染的 SSRF 防护**：`web_fetch_render` 依赖独立 browser-fetch 微容器，微容器内部自行做 URL 校验 + DNS 解析过滤（浏览器自己做 DNS 会绕过主服务防护），用安全 IP 直连 + 原 Host 头
 - **SSRF_STRICT**：设为 `true` 额外阻断 `reserved`/`multicast` 段（生产服务器推荐；开发机用 fake-ip 代理时保持 `false`）
 
 ## 项目结构
@@ -138,5 +140,7 @@ curl http://localhost:3000/mcp \
 ├── web/                     # 管理后台 SPA（Vue 3 + Naive UI + Vite）
 │   └── src/views/           # 登录 / 总览 / Key列表 / Key详情
 ├── searxng/                 # SearXNG 配置
-└── docker-compose.yml       # MySQL + SearXNG（本地开发）
+├── browser-fetch/           # 浏览器渲染微容器（Playwright + Chromium，独立进程）
+│   └── src/                 # Express /render 服务 + SSRF 防护
+└── docker-compose.yml       # MySQL + SearXNG + browser-fetch（本地开发）
 ```

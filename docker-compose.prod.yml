@@ -22,6 +22,8 @@ services:
         condition: service_healthy
       searxng:
         condition: service_started
+      browser-fetch:
+        condition: service_healthy
     networks:
       - linkseek-net
       - honlnk-gateway-net
@@ -64,6 +66,23 @@ services:
     extra_hosts:
       # 确保 docker0 IP 在容器内可解析（部分场景需要）
       - "host.docker.internal:172.17.0.1"
+    networks:
+      - linkseek-net
+    # 不映射端口 —— 仅容器间访问
+
+  browser-fetch:
+    # 无头浏览器渲染微容器，供 app 的 web_fetch_render 工具调用
+    build: ./browser-fetch
+    image: honlnk/linkseek-browser-fetch:latest
+    container_name: linkseek-browser-fetch
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:9100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # 服务器内存敏感，限制 Chromium 内存上限
+    mem_limit: 512m
     networks:
       - linkseek-net
     # 不映射端口 —— 仅容器间访问

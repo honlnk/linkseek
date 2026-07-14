@@ -37,6 +37,21 @@ services:
     networks:
       - linkseek-net
 
+  browser-fetch:
+    # 无头浏览器渲染微容器（Playwright + Chromium），供 web_fetch_render 工具调用
+    build: ./browser-fetch
+    container_name: linkseek-browser-fetch
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:9100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - linkseek-net
+
 networks:
   linkseek-net:
     driver: bridge

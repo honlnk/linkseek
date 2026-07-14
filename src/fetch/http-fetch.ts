@@ -5,7 +5,7 @@ import { validateUrl, safeLookup, SsrfError } from './url-validator.js';
 import { htmlToMarkdown } from './html-to-md.js';
 import { logger } from '../utils/logger.js';
 
-const MAX_CONTENT_BYTES = 100 * 1024; // 100KB，超过则截断
+export const MAX_CONTENT_BYTES = 100 * 1024; // 100KB，超过则截断
 
 /**
  * 全局共享的 SSRF 安全 Agent。
@@ -139,14 +139,14 @@ async function readBodyWithLimit(response: Response, limitBytes: number): Promis
 }
 
 /** 内容截断到 MAX_CONTENT_BYTES */
-function truncate(text: string): string {
+export function truncate(text: string): string {
   const bytes = Buffer.byteLength(text, 'utf-8');
   if (bytes <= MAX_CONTENT_BYTES) return text;
   const truncated = Buffer.from(text, 'utf-8').subarray(0, MAX_CONTENT_BYTES).toString('utf-8');
   return `${truncated}\n\n---\n[内容已截断，原文约 ${formatBytes(bytes)}]`;
 }
 
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;

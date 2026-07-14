@@ -49,6 +49,16 @@ const schema = z.object({
     }
   }),
   SEARXNG_URL: z.string().url().default('http://localhost:8080'),
+  // ---- 浏览器渲染获取（web_fetch_render）----
+  // browser-fetch 微容器地址；未部署微容器时设 BROWSER_FETCH_ENABLED=false 关闭工具
+  BROWSER_FETCH_URL: z.string().url().default('http://localhost:9100'),
+  // 渲染超时（毫秒），含浏览器冷启动
+  BROWSER_FETCH_TIMEOUT: z.coerce.number().int().positive().default(30_000),
+  // 开关：设 'false' 关闭（不注册 web_fetch_render 工具）；默认启用
+  BROWSER_FETCH_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v !== 'false'),
   FETCH_TIMEOUT: z.coerce.number().int().positive().default(30_000),
   MAX_RESPONSE_SIZE: z.coerce.number().int().positive().default(5_242_880),
   MAX_REDIRECTS: z.coerce.number().int().positive().default(5),
