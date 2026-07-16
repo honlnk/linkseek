@@ -1,15 +1,36 @@
-# 生产环境编排。
-# app 容器直接拉取已发布到 Docker Hub 的镜像（honlnk/linkseek:latest），
-# 服务器上无需构建。若需本地构建，把 app.image 换成 app.build: .
+# 生产环境编排（双层网关模式：honlnk-gateway 分流 → linkseek-gateway 专属）。
+#
+# 架构：
+#   公网:443 → honlnk-gateway(共享, HTTPS 终止) → linkseek-gateway(项目专属, HTTPS) → linkseek-app:3000
+#
+# app/gateway 镜像从 Docker Hub 拉取，服务器上无需源码/构建。
+# 若需本地构建 app，把 app.image 换成 app.build: .
 #
 # 与 docker-compose.yml（本地开发）的区别：
-# - app 容器：拉取镜像运行（Dockerfile 仍保留在仓库里供本地/CI 构建用）
+# - 新增 gateway 服务：项目专属 Nginx，跨双网络
+# - app 不再接入 honlnk-gateway-net（由 gateway 替它接入对外网络）
+# - browser-fetch 用已发布镜像（部署目录无源码可构建）
 # - mysql/searxng：不映射宿主机端口（仅容器间通信，安全）
-# - 双网络：linkseek-net（内部通信）+ honlnk-gateway-net（让 gateway 反代）
 #
 # 使用方式：docker compose -f docker-compose.prod.yml up -d
 
 services:
+  gateway:
+    # 项目专属网关：HTTPS 终止（容器内层）+ 反代到 app
+    # 配置挂载自 ./nginx/linkseek-gateway.conf，证书挂载自 ./ssl/
+    image: nginx:stable-alpine
+    container_name: linkseek-gateway
+    restart: unless-stopped
+    volumes:
+      - ./nginx/linkseek-gateway.conf:/etc/nginx/conf.d/linkseek-gateway.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    networks:
+      - linkseek-net          # 反代到 linkseek-app
+      - honlnk-gateway-net    # 让 honlnk-gateway 能 proxy_pass 过来
+    # 不映射端口 —— 纯容器间通信
+
   app:
     image: honlnk/linkseek:latest
     container_name: linkseek-app
@@ -26,8 +47,7 @@ services:
         condition: service_healthy
     networks:
       - linkseek-net
-      - honlnk-gateway-net
-    # 不映射端口 —— 由 honlnk-gateway 反代访问
+    # 不映射端口 —— 由 linkseek-gateway 反代访问
 
   mysql:
     image: mysql:8.0
@@ -62,7 +82,7 @@ services:
       # 依赖 mihomo 的 allow-lan: true（端口监听 0.0.0.0:7890）
       - HTTP_PROXY=http://172.17.0.1:7890
       - HTTPS_PROXY=http://172.17.0.1:7890
-      - NO_PROXY=localhost,127.0.0.1,linkseek-app,linkseek-mysql,linkseek-searxng
+      - NO_PROXY=localhost,127.0.0.1,linkseek-app,linkseek-mysql,linkseek-searxng,linkseek-gateway
     extra_hosts:
       # 确保 docker0 IP 在容器内可解析（部分场景需要）
       - "host.docker.internal:172.17.0.1"
@@ -72,7 +92,6 @@ services:
 
   browser-fetch:
     # 无头浏览器渲染微容器，供 app 的 web_fetch_render 工具调用
-    build: ./browser-fetch
     image: honlnk/linkseek-browser-fetch:latest
     container_name: linkseek-browser-fetch
     restart: unless-stopped

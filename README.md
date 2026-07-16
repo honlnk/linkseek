@@ -142,5 +142,24 @@ curl http://localhost:3000/mcp \
 ├── searxng/                 # SearXNG 配置
 ├── browser-fetch/           # 浏览器渲染微容器（Playwright + Chromium，独立进程）
 │   └── src/                 # Express /render 服务 + SSRF 防护
-└── docker-compose.yml       # MySQL + SearXNG + browser-fetch（本地开发）
+├── deploy/                  # 生产部署配置
+│   ├── docker-entrypoint.sh # 容器启动：migrate → 初始化管理员 → 启动 node
+│   └── nginx/               # Nginx 配置（linkseek-gateway 专属 + honlnk-gateway 分流）
+├── Dockerfile               # 主服务镜像（多阶段构建，已发布 honlnk/linkseek）
+├── docker-compose.yml       # 本地开发（仅 MySQL + SearXNG + browser-fetch 依赖容器）
+└── docker-compose.prod.yml  # 生产编排（双层网关 + 全量服务）
 ```
+
+## 生产部署
+
+生产采用**双层网关模式**，让 linkseek 作为独立项目自洽运行：
+
+```
+公网:443 → honlnk-gateway(共享, HTTPS 终止) → linkseek-gateway(项目专属, HTTPS) → linkseek-app:3000
+```
+
+- `honlnk-gateway` 是全机共享的 Nginx（占 80/443），只做按域名分流
+- `linkseek-gateway` 是项目专属 Nginx 容器，自管 SSE 长连接 / SPA 路由 / 安全头
+- 镜像 `honlnk/linkseek` / `honlnk/linkseek-browser-fetch` 从 Docker Hub 拉取，服务器上无需源码
+
+详见 [`docs/部署指南.md`](docs/部署指南.md)。
