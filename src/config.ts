@@ -49,6 +49,13 @@ const schema = z.object({
     }
   }),
   SEARXNG_URL: z.string().url().default('http://localhost:8080'),
+  // ---- 出站 HTTP 代理（国内服务器访问境外站点用）----
+  // 配置后 web_fetch / web_search_and_fetch 抓取目标站点时走代理。
+  // SearXNG 调用（内网）不走代理，由 NO_PROXY 排除。
+  // 未配置时行为完全不变（直连）。
+  HTTP_PROXY: z.string().optional(),
+  HTTPS_PROXY: z.string().optional(),
+  NO_PROXY: z.string().optional(),
   // ---- 浏览器渲染获取（web_fetch_render）----
   // Browserless v2 Playwright WS 端点（含 /chromium/playwright 路径）；未部署时设 BROWSER_FETCH_ENABLED=false 关闭工具
   BROWSER_FETCH_URL: z.string().default('ws://localhost:3000/chromium/playwright'),

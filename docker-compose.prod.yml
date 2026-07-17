@@ -102,6 +102,10 @@ services:
       - CONCURRENT=2
       # 内网部署，不强制鉴权；如需可设 TOKEN 并在 app 侧 endpoint 追加 ?token=
       - TOKEN=
+      # Chromium 出站走 clash 代理（国内服务器访问境外站点）；Clash 自带国内外分流
+      - HTTP_PROXY=http://172.17.0.1:7890
+      - HTTPS_PROXY=http://172.17.0.1:7890
+      - NO_PROXY=localhost,127.0.0.1,linkseek-app,linkseek-searxng,172.17.0.0/16
     healthcheck:
       # browserless v2 开源版无 /health，用 /docs/（OpenAPI 页）探活
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/docs/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

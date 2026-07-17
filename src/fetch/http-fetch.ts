@@ -1,19 +1,12 @@
-import { Agent, fetch } from 'undici';
+import { fetch } from 'undici';
 import { URL } from 'node:url';
 import { config } from '../config.js';
-import { validateUrl, safeLookup, SsrfError } from './url-validator.js';
+import { validateUrl, SsrfError } from './url-validator.js';
+import { fetchDispatcher } from './dispatcher.js';
 import { htmlToMarkdown } from './html-to-md.js';
 import { logger } from '../utils/logger.js';
 
 export const MAX_CONTENT_BYTES = 100 * 1024; // 100KB，超过则截断
-
-/**
- * 全局共享的 SSRF 安全 Agent。
- * safeLookup 会拦截内网/元数据 IP，并固定解析结果防 DNS rebinding。
- */
-const ssrfAgent = new Agent({
-  connect: { lookup: safeLookup },
-});
 
 const COMMON_HEADERS: Record<string, string> = {
   'User-Agent': 'linkseek/0.1 (+https://github.com/linkseek)',
@@ -53,8 +46,9 @@ export async function fetchPageAsMarkdown(rawUrl: string): Promise<string> {
     response = await fetch(currentUrl, {
       method: 'GET',
       headers: COMMON_HEADERS,
-      dispatcher: ssrfAgent,
+      dispatcher: fetchDispatcher,
       redirect: 'manual', // 手动处理，确保每跳都校验
+      signal: AbortSignal.timeout(config.FETCH_TIMEOUT),
     }).catch((err: unknown) => {
       if (err instanceof SsrfError) throw err;
       if (err instanceof Error && err.name === 'AbortError') {
