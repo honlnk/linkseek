@@ -9,7 +9,7 @@
 # 与 docker-compose.yml（本地开发）的区别：
 # - 新增 gateway 服务：项目专属 Nginx，跨双网络
 # - app 不再接入 honlnk-gateway-net（由 gateway 替它接入对外网络）
-# - browser-fetch 用已发布镜像（部署目录无源码可构建）
+# - browser-fetch 用 Browserless 官方镜像（ghcr.io/browserless/chromium）
 # - mysql/searxng：不映射宿主机端口（仅容器间通信，安全）
 #
 # 使用方式：docker compose -f docker-compose.prod.yml up -d
@@ -91,17 +91,24 @@ services:
     # 不映射端口 —— 仅容器间访问
 
   browser-fetch:
-    # 无头浏览器渲染微容器，供 app 的 web_fetch_render 工具调用
-    image: honlnk/linkseek-browser-fetch:latest
+    # Browserless 开源镜像，托管 Chromium 实例池，供 app 的 web_fetch_render 工具通过 CDP 调用
+    image: ghcr.io/browserless/chromium:latest
     container_name: linkseek-browser-fetch
     restart: unless-stopped
+    environment:
+      # 单次会话最大超时（ms），与 app 侧 BROWSER_FETCH_TIMEOUT 对齐
+      - TIMEOUT=30000
+      # 个人项目，限制并发省内存（每个会话约吃一个 Chromium context）
+      - MAX_CONCURRENT_SESSIONS=2
+      # 内网部署，不强制鉴权；如需可设 TOKEN 并在 app 侧 endpoint 追加 ?token=
+      - TOKEN=
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:9100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
-    # 服务器内存敏感，限制 Chromium 内存上限
-    mem_limit: 512m
+    # Browserless + Chromium 实例池，512m 会 OOM；1g 为官方推荐下限
+    mem_limit: 1g
     networks:
       - linkseek-net
     # 不映射端口 —— 仅容器间访问

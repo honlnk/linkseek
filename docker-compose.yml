@@ -38,17 +38,23 @@ services:
       - linkseek-net
 
   browser-fetch:
-    # 无头浏览器渲染微容器（Playwright + Chromium），供 web_fetch_render 工具调用
-    build: ./browser-fetch
+    # Browserless 开源镜像，托管 Chromium 实例池，供 web_fetch_render 工具通过 CDP 调用
+    image: ghcr.io/browserless/chromium:latest
     container_name: linkseek-browser-fetch
     restart: unless-stopped
     ports:
-      - "9100:9100"
+      # 映射 3000 可在本地访问 http://localhost:3000/docs 查看 Browserless 调试页
+      - "3000:3000"
+    environment:
+      - TIMEOUT=30000
+      - MAX_CONCURRENT_SESSIONS=2
+      - TOKEN=
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:9100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
+    mem_limit: 1g
     networks:
       - linkseek-net
 

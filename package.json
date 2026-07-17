@@ -33,6 +33,7 @@
     "ipaddr.js": "^2.4.0",
     "memorystore": "^1.6.8",
     "pino": "^9.5.0",
+    "playwright-core": "^1.54.0",
     "pino-pretty": "^11.2.2",
     "prisma": "6.19.3",
     "turndown": "^7.2.0",
