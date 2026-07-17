@@ -8,16 +8,16 @@ import { FetchError, truncate } from './http-fetch.js';
 /**
  * 浏览器渲染获取适配器。
  *
- * 通过 Playwright CDP 远程连接独立的 Browserless 容器（托管 Chromium 实例池），
+ * 通过 Playwright connect() 远程连接独立的 Browserless v2 容器（托管 Chromium 实例池），
  * 渲染 JS 动态页面后取回 HTML，再复用 htmlToMarkdown 转换。
+ *
+ * 接入方式：chromium.connect({ wsEndpoint }) 连接 browserless 的
+ * /chromium/playwright 端点（browserless v2 开源版的 Playwright WS 路由）。
  *
  * 与旧架构（自写 browser-fetch 微容器 + POST /render）的区别：
  * - 浏览器实例池化由 Browserless 托管（解决每请求冷启动 + 并发 OOM）
  * - 渲染逻辑（goto / 等待 / 超时）在主服务侧控制，错误信息完整透传
  * - SSRF 防护简化为主服务侧 validateUrl 静态校验（Browserless 在内部网络）
- *
- * SSRF 防护：主服务侧 validateUrl 拦截字面量内网 IP / 非法协议 / userinfo。
- * 不再做 DNS-rebinding 锁定（--host-resolver-rules 是进程级参数，与浏览器池化冲突）。
  */
 export class BrowserFetchProvider {
   constructor(
@@ -28,7 +28,7 @@ export class BrowserFetchProvider {
   /**
    * 渲染指定 URL 并返回 Markdown 正文。
    *
-   * 流程：URL 静态校验 → CDP 连接 Browserless → domcontentloaded + 等主体 → HTML→Markdown → 截断
+   * 流程：URL 静态校验 → WS 连接 Browserless → domcontentloaded + 等主体 → HTML→Markdown → 截断
    */
   async renderAsMarkdown(rawUrl: string): Promise<string> {
     // 第一道防线：静态 SSRF 校验（拦截字面量内网 IP、协议、userinfo）
@@ -37,8 +37,9 @@ export class BrowserFetchProvider {
 
     logger.debug({ endpoint: this.endpoint, url: target, timeout: this.timeout }, 'browser-fetch 渲染请求');
 
-    // 连接 Browserless（browser 实例由池托管，不关闭；只关 context）
-    const browser = await chromium.connectOverCDP(this.endpoint).catch((err: unknown) => {
+    // 连接 Browserless v2 的 Playwright WS 端点
+    // browserless 开源版的 WS 路由是 /chromium/playwright（非根路径，非 CDP 根端点）
+    const browser = await chromium.connect({ wsEndpoint: this.endpoint }).catch((err: unknown) => {
       throw new FetchError(
         `Browserless 不可达: ${err instanceof Error ? err.message : String(err)}`,
         'network',

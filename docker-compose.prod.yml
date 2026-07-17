@@ -96,14 +96,15 @@ services:
     container_name: linkseek-browser-fetch
     restart: unless-stopped
     environment:
-      # 单次会话最大超时（ms），与 app 侧 BROWSER_FETCH_TIMEOUT 对齐
-      - TIMEOUT=30000
-      # 个人项目，限制并发省内存（每个会话约吃一个 Chromium context）
-      - MAX_CONCURRENT_SESSIONS=2
+      # 单次会话最大超时（秒）；须 > app 侧 BROWSER_FETCH_TIMEOUT（30s），留出连接建立余量
+      - TIMEOUT=60
+      # 开源版并发上限用 CONCURRENT（非 Enterprise 的 MAX_CONCURRENT_SESSIONS）
+      - CONCURRENT=2
       # 内网部署，不强制鉴权；如需可设 TOKEN 并在 app 侧 endpoint 追加 ?token=
       - TOKEN=
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      # browserless v2 开源版无 /health，用 /docs/（OpenAPI 页）探活
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/docs/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5

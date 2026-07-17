@@ -50,8 +50,8 @@ const schema = z.object({
   }),
   SEARXNG_URL: z.string().url().default('http://localhost:8080'),
   // ---- 浏览器渲染获取（web_fetch_render）----
-  // Browserless 容器地址（CDP 端点）；未部署时设 BROWSER_FETCH_ENABLED=false 关闭工具
-  BROWSER_FETCH_URL: z.string().default('ws://localhost:3000'),
+  // Browserless v2 Playwright WS 端点（含 /chromium/playwright 路径）；未部署时设 BROWSER_FETCH_ENABLED=false 关闭工具
+  BROWSER_FETCH_URL: z.string().default('ws://localhost:3000/chromium/playwright'),
   // 渲染超时（毫秒）；Browserless 托管实例池，无需再含浏览器冷启动开销
   BROWSER_FETCH_TIMEOUT: z.coerce.number().int().positive().default(30_000),
   // 开关：设 'false' 关闭（不注册 web_fetch_render 工具）；默认启用
