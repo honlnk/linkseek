@@ -19,11 +19,18 @@ import { safeLookup } from './url-validator.js';
 
 /**
  * SSRF 安全 Agent（带 safeLookup DNS 过滤）。
- * 用于内网调用（SearXNG）或未配代理时的直连抓取。
+ * 用于抓取外部目标网站（未配代理时的直连）。
+ * 注意：会拦截内网 IP，不可用于调用内网服务（如 SearXNG）。
  */
 export const ssrfAgent = new Agent({
   connect: { lookup: safeLookup },
 });
+
+/**
+ * 普通 Agent（无 SSRF 校验），用于调用可信内网服务（如 SearXNG）。
+ * 这些服务本身就在内网，safeLookup 会误拦其 private IP。
+ */
+export const internalAgent = new Agent();
 
 /**
  * 抓取目标网站用的 dispatcher。

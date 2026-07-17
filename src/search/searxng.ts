@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { fetch } from 'undici';
-import { ssrfAgent } from '../fetch/dispatcher.js';
+import { internalAgent } from '../fetch/dispatcher.js';
 import type { SearchProvider, SearchResult, SearchOptions, TimeRange } from './provider.js';
 
 /**
@@ -54,7 +54,7 @@ export class SearXngProvider implements SearchProvider {
 
     const response = await fetch(url, {
       headers: { Accept: 'application/json' },
-      dispatcher: ssrfAgent, // SearXNG 是内网服务，显式不走代理
+      dispatcher: internalAgent, // SearXNG 是可信内网服务，不走代理也不做 SSRF 拦截
       signal: AbortSignal.timeout(15_000),
     });
 
