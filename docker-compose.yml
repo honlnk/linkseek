@@ -46,7 +46,7 @@ services:
       # 映射 3000 可在本地访问 http://localhost:3000/docs 查看 Browserless 调试页
       - "3000:3000"
     environment:
-      - TIMEOUT=60000
+      - TIMEOUT=200000
       - CONCURRENT=2
       - TOKEN=
     healthcheck:

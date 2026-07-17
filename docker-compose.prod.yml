@@ -96,8 +96,8 @@ services:
     container_name: linkseek-browser-fetch
     restart: unless-stopped
     environment:
-      # 单次会话最大超时（毫秒）；须 > app 侧 BROWSER_FETCH_TIMEOUT（30s=30000ms），留出连接建立余量
-      - TIMEOUT=60000
+      # 单次会话最大超时（毫秒）；须 > app 侧 BROWSER_FETCH_TIMEOUT（180s），留出连接建立余量
+      - TIMEOUT=200000
       # 开源版并发上限用 CONCURRENT（非 Enterprise 的 MAX_CONCURRENT_SESSIONS）
       - CONCURRENT=2
       # 内网部署，不强制鉴权；如需可设 TOKEN 并在 app 侧 endpoint 追加 ?token=
