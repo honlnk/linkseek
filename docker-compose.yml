@@ -28,12 +28,14 @@ services:
     container_name: linkseek-searxng
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      # 宿主映射到 8081，避免与本地其他服务（如 quartz serve）的 8080 冲突。
+      # 容器内仍监听 8080，环境变量 SEARXNG_BASE_URL 用容器内地址。
+      - "8081:8080"
     volumes:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
       - searxng-data:/etc/searxng/data
     environment:
-      - SEARXNG_BASE_URL=http://localhost:8080/
+      - SEARXNG_BASE_URL=http://localhost:8081/
     networks:
       - linkseek-net
 
@@ -43,8 +45,9 @@ services:
     container_name: linkseek-browser-fetch
     restart: unless-stopped
     ports:
-      # 映射 3000 可在本地访问 http://localhost:3000/docs 查看 Browserless 调试页
-      - "3000:3000"
+      # 映射 9100 可在本地访问 http://localhost:9100/docs 查看 Browserless 调试页。
+      # 容器内仍监听 3000（browserless 默认），宿主侧映射到 9100 避免占用常用端口。
+      - "9100:3000"
     environment:
       - TIMEOUT=200000
       - CONCURRENT=2

@@ -62,7 +62,7 @@ pnpm web:build    # 构建管理后台 SPA
 pnpm dev          # 启动后端（含 MCP + REST API + 静态托管）
 ```
 
-访问 `http://localhost:3000` 进入管理后台。
+访问 `http://localhost:7300` 进入管理后台。
 
 ### 开发模式（前后端分离热重载）
 
@@ -70,21 +70,21 @@ pnpm dev          # 启动后端（含 MCP + REST API + 静态托管）
 # 终端 1：后端
 pnpm dev
 
-# 终端 2：前端（Vite dev server，代理 /api 到 3000）
+# 终端 2：前端（Vite dev server，代理 /api 到 7300）
 pnpm web:dev
-# 访问 http://localhost:5173
+# 访问 http://localhost:7317
 ```
 
 ## 使用流程
 
-1. 浏览器打开 `http://localhost:3000`，用 `ADMIN_PASSWORD` 登录
+1. 浏览器打开 `http://localhost:7300`，用 `ADMIN_PASSWORD` 登录
 2. 在「Key 管理」新建一个 Key（明文只显示一次，立即保存）
 3. 把 Key 配置到 AI 工具：
    ```json
    {
      "mcpServers": {
        "linkseek": {
-         "url": "http://localhost:3000/mcp",
+         "url": "http://localhost:7300/mcp",
          "headers": { "Authorization": "Bearer YOUR_API_KEY" }
        }
      }
@@ -96,10 +96,10 @@ pnpm web:dev
 
 ```bash
 # 健康检查
-curl http://localhost:3000/health
+curl http://localhost:7300/health
 
 # MCP 握手（需替换 YOUR_API_KEY）
-curl http://localhost:3000/mcp \
+curl http://localhost:7300/mcp \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
@@ -155,7 +155,7 @@ curl http://localhost:3000/mcp \
 生产采用**双层网关模式**，让 linkseek 作为独立项目自洽运行：
 
 ```
-公网:443 → honlnk-gateway(共享, HTTPS 终止) → linkseek-gateway(项目专属, HTTPS) → linkseek-app:3000
+公网:443 → honlnk-gateway(共享, HTTPS 终止) → linkseek-gateway(项目专属, HTTPS) → linkseek-app:7300
 ```
 
 - `honlnk-gateway` 是全机共享的 Nginx（占 80/443），只做按域名分流

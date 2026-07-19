@@ -58,7 +58,7 @@ const schema = z.object({
   NO_PROXY: z.string().optional(),
   // ---- 浏览器渲染获取（web_fetch_render）----
   // Browserless v2 Playwright WS 端点（含 /chromium/playwright 路径）；未部署时设 BROWSER_FETCH_ENABLED=false 关闭工具
-  BROWSER_FETCH_URL: z.string().default('ws://localhost:3000/chromium/playwright'),
+  BROWSER_FETCH_URL: z.string().default('ws://localhost:9100/chromium/playwright'),
   // 渲染超时（毫秒）；给慢站点留足时间（含跨境网络延迟），须 < browserless 会话 TIMEOUT
   BROWSER_FETCH_TIMEOUT: z.coerce.number().int().positive().default(180_000),
   // 开关：设 'false' 关闭（不注册 web_fetch_render 工具）；默认启用

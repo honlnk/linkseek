@@ -1,7 +1,7 @@
 # 生产环境编排（双层网关模式：honlnk-gateway 分流 → linkseek-gateway 专属）。
 #
 # 架构：
-#   公网:443 → honlnk-gateway(共享, HTTPS 终止) → linkseek-gateway(项目专属, HTTPS) → linkseek-app:3000
+#   公网:443 → honlnk-gateway(共享, HTTPS 终止) → linkseek-gateway(项目专属, HTTPS) → linkseek-app:7300
 #
 # app/gateway 镜像从 Docker Hub 拉取，服务器上无需源码/构建。
 # 若需本地构建 app，把 app.image 换成 app.build: .
