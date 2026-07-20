@@ -66,7 +66,10 @@ async function handleLogout() {
       @collapse="collapsed = true"
       @expand="collapsed = false"
     >
-      <div class="logo">{{ collapsed ? 'L' : 'linkseek' }}</div>
+      <div class="logo">
+        <img src="/assets/brand/logo-mark.svg" alt="linkseek" />
+        <span v-if="!collapsed">linkseek</span>
+      </div>
       <NMenu
         :collapsed="collapsed"
         :collapsed-width="64"
@@ -95,9 +98,15 @@ async function handleLogout() {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   font-weight: 600;
   font-size: 16px;
   border-bottom: 1px solid var(--n-border-color);
+}
+.logo img {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
 }
 .header {
   height: 56px;

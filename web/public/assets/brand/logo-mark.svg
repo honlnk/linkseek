@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">linkseek</title>
+  <desc id="desc">Connected nodes with a search lens</desc>
+  <rect width="64" height="64" rx="16" fill="#0969DA"/>
+  <path d="M18 20.5 31.5 31.8M18 43.5l13.5-11.7" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round"/>
+  <circle cx="17.5" cy="20" r="5" fill="#fff"/>
+  <circle cx="17.5" cy="44" r="5" fill="#fff"/>
+  <circle cx="32" cy="32" r="5" fill="#fff"/>
+  <circle cx="40.5" cy="38.5" r="10.5" fill="#0969DA" stroke="#fff" stroke-width="4.5"/>
+  <path d="m48.2 46.2 6.3 6.3" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round"/>
+</svg>

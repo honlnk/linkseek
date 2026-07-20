@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>linkseek · 自托管联网搜索 MCP 服务</title>
   <meta name="description" content="linkseek 是一个开源自托管的远程 MCP 服务，为 AI 编程工具提供联网搜索 + 网页获取能力，配套网页端管理后台。" />
+  <link rel="icon" type="image/svg+xml" href="/assets/brand/logo-mark.svg" />
   <style>
     :root {
       --bg: #ffffff;
@@ -70,12 +71,7 @@
     }
     .nav { display: flex; align-items: center; justify-content: space-between; height: 56px; }
     .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; color: var(--text); }
-    .brand-logo {
-      width: 28px; height: 28px; border-radius: 8px;
-      background: linear-gradient(135deg, var(--accent), #6f4ed1);
-      display: grid; place-items: center;
-      color: white; font-weight: 800; font-size: 14px;
-    }
+    .brand-logo { width: 28px; height: 28px; display: block; }
     .nav-links { display: flex; gap: 8px; align-items: center; }
     .nav-links a {
       color: var(--text-soft); font-size: 14px; padding: 6px 12px;
@@ -208,7 +204,7 @@
   <header>
     <div class="container nav">
       <a href="/" class="brand">
-        <span class="brand-logo">L</span>
+        <img class="brand-logo" src="/assets/brand/logo-mark.svg" alt="linkseek" />
         <span>linkseek</span>
       </a>
       <nav class="nav-links">
@@ -230,6 +226,7 @@
     <p>linkseek 是一个开源自托管的远程 MCP 服务，通过 HTTP 为 Claude Code、Cursor 等 AI 工具提供「联网搜索」和「网页正文获取」能力，配套网页端管理后台。</p>
     <div class="hero-actions">
       <a href="#usage" class="btn btn-primary">开始使用</a>
+      <a href="#deploy" class="btn btn-secondary">自部署</a>
       <a href="https://github.com/honlnk/linkseek" class="btn btn-secondary" target="_blank" rel="noopener">查看源码</a>
     </div>
   </div>

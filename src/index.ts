@@ -39,6 +39,10 @@ app.get('/health', (_req, res) => {
 // Nginx 反代链路（honlnk-gateway → linkseek-gateway）已透传 Host 头，此处分流可靠。
 const isAdminSite = (req: express.Request) => req.hostname === config.ADMIN_DOMAIN;
 const docsHtmlPath = path.resolve(__dirname, '../public/docs.html');
+const publicBrandPath = path.resolve(__dirname, '../public/assets/brand');
+
+// 文档页的 Logo/favicon 资源。限定到品牌目录，避免公开站点暴露其他后台静态文件。
+app.use('/assets/brand', express.static(publicBrandPath, { maxAge: '1y', immutable: true }));
 
 app.use((req, res, next) => {
   if (isAdminSite(req)) return next(); // 后台域名 → 走后续 admin 路由（session/api/spa）
