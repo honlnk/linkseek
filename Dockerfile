@@ -32,6 +32,7 @@ COPY src ./src
 COPY public ./public
 COPY web/index.html web/vite.config.ts web/tsconfig.json web/tsconfig.node.json ./web/
 COPY web/src ./web/src
+COPY web/public ./web/public
 
 # 构建前端 SPA
 RUN pnpm web:build
