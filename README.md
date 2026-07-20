@@ -2,6 +2,29 @@
 
 自托管的远程 MCP 服务，通过 HTTP 提供「联网搜索 + 网页获取」能力给 AI 编程工具（Claude Code / Cursor 等），并配套网页端管理后台。
 
+## 域名结构（多域名分流）
+
+linkseek 默认行为是「文档站 + MCP 服务」，后台管理是特例（按 Host 头区分）：
+
+| 入口 | 用途 |
+|------|------|
+| `linkseek.honlnk.com`（默认） | **文档页**（浏览器 `GET /`）+ **MCP 端点**（AI 工具 `POST /` + Authorization，同一 URL） |
+| `admin.linkseek.honlnk.com`（后台域名） | **管理后台**（登录 + Key 管理 + 用量统计） |
+
+- 浏览器访问 `linkseek.honlnk.com` 看到的是使用文档与自部署教程（GET 请求）
+- AI 工具配 `https://linkseek.honlnk.com` + Bearer Token，POST 同一个 URL 走 MCP 服务（靠 HTTP 方法 + Authorization 区分，零冲突）
+- 后台管理需访问 `admin.linkseek.honlnk.com`（`ADMIN_DOMAIN` 配置项控制）
+- `/mcp` 路径在所有域名下依然可用（兼容已部署客户端）
+
+### 本地开发端口对应
+
+本地两个端口与线上两个域名一一对应，无需改 `/etc/hosts`：
+
+| 本地端口 | 对应线上 | 内容 | 启动 |
+|---------|---------|------|------|
+| `localhost:7300` | `linkseek.honlnk.com` | 文档页 + MCP | `pnpm dev` |
+| `localhost:7317` | `admin.linkseek.honlnk.com` | 后台 SPA（热重载） | `pnpm web:dev` |
+
 ## 已实现功能
 
 ### MCP 服务（给 AI 工具调用）
@@ -59,32 +82,36 @@ pnpm db:seed      # 初始化管理员账号
 
 ```bash
 pnpm web:build    # 构建管理后台 SPA
-pnpm dev          # 启动后端（含 MCP + REST API + 静态托管）
+pnpm dev          # 启动后端（含 MCP + 文档页 + REST API + 后台 SPA 静态托管）
 ```
 
-访问 `http://localhost:7300` 进入管理后台。
+- 浏览器打开 `http://localhost:7300` → **文档页**（对应线上 `linkseek.honlnk.com`）
+- 后台管理需启动前端 dev server（见下），或访问 `http://localhost:7300` 的 admin 域名
 
 ### 开发模式（前后端分离热重载）
 
-```bash
-# 终端 1：后端
-pnpm dev
+后台管理前端单独启动，与线上 `admin.linkseek.honlnk.com` 对应：
 
-# 终端 2：前端（Vite dev server，代理 /api 到 7300）
+```bash
+# 终端 1：后端（文档页 + MCP + REST API）
+pnpm dev
+# http://localhost:7300 → 文档页 / MCP 端点
+
+# 终端 2：后台前端（Vite dev server，代理 /api 到 7300）
 pnpm web:dev
-# 访问 http://localhost:7317
+# http://localhost:7317 → 管理后台
 ```
 
 ## 使用流程
 
-1. 浏览器打开 `http://localhost:7300`，用 `ADMIN_PASSWORD` 登录
+1. 浏览器打开 `http://localhost:7317`（后台前端），用 `ADMIN_PASSWORD` 登录
 2. 在「Key 管理」新建一个 Key（明文只显示一次，立即保存）
 3. 把 Key 配置到 AI 工具：
    ```json
    {
      "mcpServers": {
        "linkseek": {
-         "url": "http://localhost:7300/mcp",
+         "url": "http://localhost:7300",
          "headers": { "Authorization": "Bearer YOUR_API_KEY" }
        }
      }
@@ -99,7 +126,7 @@ pnpm web:dev
 curl http://localhost:7300/health
 
 # MCP 握手（需替换 YOUR_API_KEY）
-curl http://localhost:7300/mcp \
+curl http://localhost:7300 \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \

@@ -25,7 +25,32 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-// ---- 管理后台 REST API ----
+// ---- 默认站点（文档 + MCP）vs 后台站点（Vue SPA）----
+// linkseek 默认行为是「文档站 + MCP 服务」，后台管理是特例。
+//   1. 默认站点（localhost / 公开域名 linkseek.honlnk.com / IP）
+//      - GET  /        → 文档页 HTML（浏览器访问）
+//      - POST /        → MCP 服务（AI 工具配裸域名 + Authorization，靠方法区分）
+//      - GET  /mcp     → 405 JSON-RPC（无状态模式不支持 GET）
+//      - POST /mcp     → MCP 服务（兼容显式路径）
+//      - 其余路径      → 404（不暴露后台 API）
+//   2. 后台站点（ADMIN_DOMAIN，如 admin.linkseek.honlnk.com）：完整 Vue SPA + REST API
+//
+// 这样本地与生产行为对齐：localhost:7300 ↔ linkseek.honlnk.com，localhost:7317 ↔ admin.*.honlnk.com
+// Nginx 反代链路（honlnk-gateway → linkseek-gateway）已透传 Host 头，此处分流可靠。
+const isAdminSite = (req: express.Request) => req.hostname === config.ADMIN_DOMAIN;
+const docsHtmlPath = path.resolve(__dirname, '../public/docs.html');
+
+app.use((req, res, next) => {
+  if (isAdminSite(req)) return next(); // 后台域名 → 走后续 admin 路由（session/api/spa）
+  // 默认域名：文档页（GET / 或 GET /index.html）
+  if (req.method === 'GET' && (req.path === '/' || req.path === '/index.html')) {
+    return res.sendFile(docsHtmlPath);
+  }
+  if (req.path === '/' || req.path === '/mcp' || req.path === '/health') return next(); // 放行给 MCP / health handler
+  return res.status(404).send('Not Found'); // /api、SPA 路径等一律 404（文档站不暴露后台）
+});
+
+// ---- 管理后台 REST API（仅后台域名可达，上面的中间件已把默认域名的 /api 拦截到 404）----
 app.use(sessionMiddleware);
 app.use('/api', createAdminRouter());
 
@@ -46,7 +71,8 @@ const mcpAuth = requireBearerAuth({
   verifier: createApiKeyVerifier(keyStore),
 });
 
-app.post('/mcp', mcpAuth, async (req, res) => {
+// MCP 请求处理（无状态模式：每个请求独立 transport + server）
+async function handleMcpRequest(req: express.Request, res: express.Response) {
   const server = createServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   try {
@@ -80,9 +106,10 @@ app.post('/mcp', mcpAuth, async (req, res) => {
       server.close();
     });
   }
-});
+}
 
-app.get('/mcp', (_req, res) => {
+// MCP 无状态模式拒绝 GET/DELETE（返回 JSON-RPC 错误而非 HTML）
+function rejectMcpStateless(_req: express.Request, res: express.Response) {
   res.writeHead(405).end(
     JSON.stringify({
       jsonrpc: '2.0',
@@ -90,16 +117,19 @@ app.get('/mcp', (_req, res) => {
       id: null,
     }),
   );
-});
-app.delete('/mcp', (_req, res) => {
-  res.writeHead(405).end(
-    JSON.stringify({
-      jsonrpc: '2.0',
-      error: { code: -32000, message: 'Method not allowed (stateless mode)' },
-      id: null,
-    }),
-  );
-});
+}
+
+// MCP 端点挂载策略：
+//   POST / 和 POST /mcp  → MCP 服务（mcpAuth 鉴权）
+//   GET/DELETE /mcp      → 返回 405 JSON-RPC（无状态模式不支持）
+//   GET /                → 不挂 MCP：public 域名在分流中间件返回文档页，
+//                          admin 域名落到下方 SPA fallback 返回 index.html
+// 根路径 POST MCP 只在 public 域名真正会被触发（admin 域名下 POST / 不常见，
+// 但即便误触发也只是被 mcpAuth 拦截要求 Bearer，对 SPA 无副作用）。
+app.post('/', mcpAuth, handleMcpRequest);
+app.post('/mcp', mcpAuth, handleMcpRequest);
+app.get('/mcp', rejectMcpStateless);
+app.delete('/mcp', rejectMcpStateless);
 
 // ---- Vue SPA 静态托管 ----
 const webDist = path.resolve(__dirname, '../web/dist');
@@ -113,6 +143,6 @@ app.get(/^(?!\/(api|mcp)).*/, (_req, res, next) => {
 
 app.listen(config.PORT, () => {
   logger.info(`linkseek 服务已启动: http://localhost:${config.PORT}`);
-  logger.info(`MCP 端点: http://localhost:${config.PORT}/mcp`);
-  logger.info(`管理后台: http://localhost:${config.PORT}/`);
+  logger.info(`文档页（浏览器 GET /）+ MCP 端点（POST / + Bearer）: http://localhost:${config.PORT}/`);
+  logger.info(`后台管理: http://localhost:7317/（pnpm web:dev）或 http://${config.ADMIN_DOMAIN}/（生产）`);
 });

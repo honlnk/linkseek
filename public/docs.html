@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>linkseek · 自托管联网搜索 MCP 服务</title>
+  <meta name="description" content="linkseek 是一个开源自托管的远程 MCP 服务，为 AI 编程工具提供联网搜索 + 网页获取能力，配套网页端管理后台。" />
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-soft: #f7f8fa;
+      --bg-code: #f3f4f6;
+      --border: #e5e7eb;
+      --text: #1f2328;
+      --text-soft: #57606a;
+      --text-muted: #8b949e;
+      --accent: #0969da;
+      --accent-soft: #ddf4ff;
+      --green: #1a7f37;
+      --green-soft: #dafbe1;
+      --orange: #bc4c00;
+      --orange-soft: #fff1e5;
+      --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.04);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --bg-soft: #161b22;
+        --bg-code: #1c2128;
+        --border: #30363d;
+        --text: #e6edf3;
+        --text-soft: #9198a1;
+        --text-muted: #6e7681;
+        --accent: #58a6ff;
+        --accent-soft: #1f6feb22;
+        --green: #3fb950;
+        --green-soft: #3fb95022;
+        --orange: #db6d28;
+        --orange-soft: #db6d2822;
+        --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.3);
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+    code, pre, .mono {
+      font-family: "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Layout */
+    .container { max-width: 920px; margin: 0 auto; padding: 0 24px; }
+
+    /* Header */
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: color-mix(in srgb, var(--bg) 85%, transparent);
+      backdrop-filter: saturate(180%) blur(12px);
+      -webkit-backdrop-filter: saturate(180%) blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; color: var(--text); }
+    .brand-logo {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), #6f4ed1);
+      display: grid; place-items: center;
+      color: white; font-weight: 800; font-size: 14px;
+    }
+    .nav-links { display: flex; gap: 8px; align-items: center; }
+    .nav-links a {
+      color: var(--text-soft); font-size: 14px; padding: 6px 12px;
+      border-radius: 6px; transition: all .15s;
+    }
+    .nav-links a:hover { background: var(--bg-soft); color: var(--text); text-decoration: none; }
+    .btn-github {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--bg-soft); border: 1px solid var(--border);
+      padding: 6px 14px; border-radius: 6px; font-size: 13px; color: var(--text);
+    }
+    .btn-github:hover { background: var(--bg-code); text-decoration: none; }
+
+    /* Hero */
+    .hero { padding: 80px 0 60px; text-align: center; }
+    .hero-badge {
+      display: inline-block; padding: 4px 12px; border-radius: 999px;
+      background: var(--accent-soft); color: var(--accent);
+      font-size: 13px; font-weight: 500; margin-bottom: 24px;
+    }
+    .hero h1 {
+      font-size: 48px; font-weight: 800; letter-spacing: -0.02em;
+      margin: 0 0 16px; line-height: 1.15;
+    }
+    .hero h1 .grad {
+      background: linear-gradient(135deg, var(--accent), #6f4ed1);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p { font-size: 20px; color: var(--text-soft); max-width: 640px; margin: 0 auto 32px; }
+    .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 15px;
+      transition: all .15s; cursor: pointer; border: 1px solid transparent;
+    }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent); filter: brightness(1.1); text-decoration: none; }
+    .btn-secondary { background: var(--bg-soft); color: var(--text); border-color: var(--border); }
+    .btn-secondary:hover { background: var(--bg-code); text-decoration: none; }
+
+    /* Sections */
+    section { padding: 56px 0; border-top: 1px solid var(--border); }
+    .section-title {
+      font-size: 14px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--accent); margin: 0 0 8px;
+    }
+    .section-desc { color: var(--text-soft); font-size: 16px; margin: 0 0 32px; max-width: 720px; }
+    h2 { font-size: 32px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 8px; }
+    h3 { font-size: 20px; font-weight: 600; margin: 32px 0 12px; }
+    h4 { font-size: 16px; font-weight: 600; margin: 24px 0 8px; }
+    p { margin: 12px 0; }
+
+    /* Tool cards */
+    .tool-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    @media (max-width: 720px) { .tool-grid { grid-template-columns: 1fr; } }
+    .tool-card {
+      background: var(--bg-soft); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px; transition: all .2s;
+    }
+    .tool-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    .tool-card .tool-name {
+      font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+      font-size: 14px; font-weight: 600; color: var(--accent);
+      background: var(--accent-soft); padding: 2px 8px; border-radius: 4px;
+      display: inline-block; margin-bottom: 8px;
+    }
+    .tool-card .tool-desc { font-size: 14px; color: var(--text-soft); margin: 6px 0 10px; }
+    .tool-card .tool-params { font-size: 12px; color: var(--text-muted); }
+    .tool-card .tool-params code { background: var(--bg-code); padding: 1px 5px; border-radius: 3px; color: var(--text-soft); }
+
+    /* Code block */
+    pre {
+      background: var(--bg-code); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px 18px; overflow-x: auto;
+      font-size: 13.5px; line-height: 1.6; margin: 16px 0;
+    }
+    pre code { background: transparent; padding: 0; color: var(--text); }
+    code:not(pre code) { background: var(--bg-code); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: var(--text); }
+
+    /* Steps */
+    .steps { counter-reset: step; margin: 24px 0; padding: 0; list-style: none; }
+    .steps li {
+      position: relative; padding: 20px 0 20px 56px; border-left: 2px solid var(--border);
+      margin-left: 20px;
+    }
+    .steps li::before {
+      counter-increment: step; content: counter(step);
+      position: absolute; left: -16px; top: 20px;
+      width: 30px; height: 30px; border-radius: 50%;
+      background: var(--bg); border: 2px solid var(--accent); color: var(--accent);
+      display: grid; place-items: center; font-weight: 700; font-size: 14px;
+    }
+    .steps li h4 { margin-top: 0; }
+
+    /* Callout */
+    .callout {
+      padding: 16px 20px; border-radius: 8px; margin: 20px 0;
+      font-size: 14px; border: 1px solid;
+    }
+    .callout-info { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+    .callout-warn { background: var(--orange-soft); border-color: color-mix(in srgb, var(--orange) 30%, transparent); }
+    .callout-success { background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 30%, transparent); }
+    .callout strong { color: var(--text); }
+
+    /* Inline list */
+    ul.feature-list { padding-left: 20px; margin: 12px 0; }
+    ul.feature-list li { margin: 6px 0; }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+    th { font-weight: 600; color: var(--text); background: var(--bg-soft); }
+    td code { font-size: 13px; }
+
+    /* Footer */
+    footer { border-top: 1px solid var(--border); padding: 40px 0; text-align: center; color: var(--text-muted); font-size: 14px; }
+    footer a { color: var(--text-soft); }
+
+    @media (max-width: 600px) {
+      .hero { padding: 60px 0 40px; }
+      .hero h1 { font-size: 36px; }
+      .hero p { font-size: 17px; }
+      h2 { font-size: 26px; }
+      .nav-links a:not(.btn-github) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <a href="/" class="brand">
+        <span class="brand-logo">L</span>
+        <span>linkseek</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#features">功能</a>
+        <a href="#usage">使用方法</a>
+        <a href="#deploy">自部署</a>
+        <a href="https://github.com/honlnk/linkseek" class="btn-github" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <div class="container hero">
+    <span class="hero-badge">自托管 · 开源 · MCP 协议</span>
+    <h1>为 AI 编程工具装上<br/><span class="grad">联网搜索 + 网页获取</span></h1>
+    <p>linkseek 是一个开源自托管的远程 MCP 服务，通过 HTTP 为 Claude Code、Cursor 等 AI 工具提供「联网搜索」和「网页正文获取」能力，配套网页端管理后台。</p>
+    <div class="hero-actions">
+      <a href="#usage" class="btn btn-primary">开始使用</a>
+      <a href="https://github.com/honlnk/linkseek" class="btn btn-secondary" target="_blank" rel="noopener">查看源码</a>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <section id="features">
+    <div class="container">
+      <p class="section-title">功能</p>
+      <h2>4 个 MCP 工具</h2>
+      <p class="section-desc">遵循 <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> 标准，兼容所有支持 MCP 的 AI 编程工具。</p>
+
+      <div class="tool-grid">
+        <div class="tool-card">
+          <span class="tool-name">web_search</span>
+          <div class="tool-desc">联网搜索关键词，返回结构化结果（标题、URL、摘要）。</div>
+          <div class="tool-params">参数：<code>query</code> <code>maxResults</code> <code>timeRange</code> <code>language</code></div>
+        </div>
+        <div class="tool-card">
+          <span class="tool-name">web_fetch</span>
+          <div class="tool-desc">获取网页正文并转为 Markdown，自动去噪（去除导航/广告/页脚）。</div>
+          <div class="tool-params">参数：<code>url</code></div>
+        </div>
+        <div class="tool-card">
+          <span class="tool-name">web_search_and_fetch</span>
+          <div class="tool-desc">搜索 + 批量抓取正文一步到位，适合快速收集多个来源。</div>
+          <div class="tool-params">参数：<code>query</code> <code>fetchCount</code> <code>searchMaxResults</code></div>
+        </div>
+        <div class="tool-card">
+          <span class="tool-name">web_fetch_render</span>
+          <div class="tool-desc">无头浏览器渲染获取 JS 动态页面（SPA），再转 Markdown。</div>
+          <div class="tool-params">参数：<code>url</code></div>
+        </div>
+      </div>
+
+      <h3>核心特性</h3>
+      <ul class="feature-list">
+        <li><strong>Streamable HTTP 传输</strong> — 裸域名直接接入，远程访问，无需本地进程</li>
+        <li><strong>API Key 鉴权</strong> — Bearer Token，每个 Key 独立计量、可启停</li>
+        <li><strong>SSRF 防护</strong> — IP 段拦截 + DNS rebinding 防护 + 重定向逐跳校验</li>
+        <li><strong>HTML → Markdown</strong> — 正文提取 + 噪音去除，对大模型友好</li>
+        <li><strong>SearXNG 元搜索</strong> — 聚合 Google / Bing / DuckDuckGo 等多源结果</li>
+        <li><strong>管理后台</strong> — Key 管理 + 用量统计（按工具/时间分布）</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Usage -->
+  <section id="usage">
+    <div class="container">
+      <p class="section-title">使用方法</p>
+      <h2>接入 AI 编程工具</h2>
+      <p class="section-desc">linkseek 遵循标准 MCP Streamable HTTP 协议，配置一次即可永久生效。</p>
+
+      <div class="callout callout-info">
+        <strong>关于公开实例：</strong>本站 <code>https://linkseek.honlnk.com</code> 是作者的个人部署，仅供自用和演示。
+        如果你希望使用 linkseek，推荐 <a href="#deploy">自行部署</a>（开源免费，5 分钟搞定）。
+        如需申请本站的测试 Key，可在 <a href="https://github.com/honlnk/linkseek/issues" target="_blank" rel="noopener">GitHub Issues</a> 联系作者。
+      </div>
+
+      <h3>1. 获取 API Key</h3>
+      <p>部署后在管理后台（<code>https://admin.你的域名/</code>）登录，在「Key 管理」新建一个 Key。明文 Key 只显示一次，请立即保存。</p>
+
+      <h3>2. 配置 AI 工具</h3>
+      <p>在 Claude Desktop / Claude Code / Cursor / Continue 等 AI 工具的配置文件中加入：</p>
+      <pre><code>{
+  "mcpServers": {
+    "linkseek": {
+      "url": "https://linkseek.honlnk.com",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      }
+    }
+  }
+}</code></pre>
+
+      <div class="callout callout-success">
+        <strong>同一个 URL，两种用途：</strong>AI 工具配的 URL 就是文档页地址本身。<br/>
+        浏览器 <code>GET</code> 这个地址 → 返回文档页（你正在看的这个）；AI 工具 <code>POST</code> + <code>Authorization</code> 这个地址 → 走 MCP 服务。靠 HTTP 方法和鉴权头区分，零冲突。
+      </div>
+
+      <div class="callout callout-warn">
+        <strong>Bearer Token：</strong>把 <code>YOUR_API_KEY</code> 换成你在后台创建的 Key（形如 <code>wf_xxxxxxxx</code>）。
+      </div>
+
+      <h3>3. 验证连通性</h3>
+      <p>配置完成后，在 AI 工具里直接提问需要联网的问题，例如「搜索最新的 Node.js LTS 版本」。也可以用 curl 手动测试：</p>
+      <pre><code>curl https://linkseek.honlnk.com \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-03-26",
+      "capabilities": {},
+      "clientInfo": {"name": "test", "version": "1.0"}
+    },
+    "id": 1
+  }'</code></pre>
+      <p>成功的话会返回包含 <code>"result"</code> 的 JSON-RPC 响应。</p>
+
+      <h3>工具参数速查</h3>
+      <table>
+        <thead>
+          <tr><th>工具</th><th>必填</th><th>可选</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>web_search</code></td><td><code>query</code></td><td><code>maxResults</code> <code>timeRange</code>(day/month/year) <code>language</code></td></tr>
+          <tr><td><code>web_fetch</code></td><td><code>url</code></td><td>—</td></tr>
+          <tr><td><code>web_search_and_fetch</code></td><td><code>query</code></td><td><code>fetchCount</code> <code>searchMaxResults</code> <code>timeRange</code> <code>language</code></td></tr>
+          <tr><td><code>web_fetch_render</code></td><td><code>url</code></td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Deploy -->
+  <section id="deploy">
+    <div class="container">
+      <p class="section-title">自部署</p>
+      <h2>5 分钟自部署 linkseek</h2>
+      <p class="section-desc">基于 Docker Compose，一台带 Docker 的 Linux 服务器即可。完整的部署脚本和配置已在 <a href="https://github.com/honlnk/linkseek" target="_blank" rel="noopener">GitHub 仓库</a>。</p>
+
+      <div class="callout callout-success">
+        <strong>架构一览：</strong>
+        <span class="mono" style="font-size: 13px; display: block; margin-top: 8px; line-height: 1.8;">
+          公网 :443 → Nginx (HTTPS) → linkseek-app:7300 (Node)<br/>
+          &nbsp;&nbsp;&nbsp;&nbsp;├── MySQL（Key 存储 + 用量记录）<br/>
+          &nbsp;&nbsp;&nbsp;&nbsp;├── SearXNG（元搜索后端）<br/>
+          &nbsp;&nbsp;&nbsp;&nbsp;└── Browserless（无头浏览器，web_fetch_render 用）
+        </span>
+      </div>
+
+      <h3>前置要求</h3>
+      <ul class="feature-list">
+        <li>一台 Linux 服务器（推荐 2C2G 起，Browserless 比较吃内存）</li>
+        <li>已安装 Docker 和 Docker Compose</li>
+        <li>一个解析到服务器的域名（例如 <code>linkseek.example.com</code>）</li>
+        <li>服务器 80/443 端口可用（用于申请证书）</li>
+      </ul>
+
+      <h3>部署步骤</h3>
+
+      <ol class="steps">
+        <li>
+          <h4>克隆仓库</h4>
+          <pre><code>git clone https://github.com/honlnk/linkseek.git
+cd linkseek</code></pre>
+        </li>
+        <li>
+          <h4>配置 DNS</h4>
+          <p>在你的域名服务商添加两条 A 记录，指向你的服务器 IP：</p>
+          <table>
+            <thead><tr><th>记录类型</th><th>主机记录</th><th>记录值</th></tr></thead>
+            <tbody>
+              <tr><td>A</td><td><code>linkseek</code></td><td>你的服务器 IP</td></tr>
+              <tr><td>A</td><td><code>admin.linkseek</code></td><td>你的服务器 IP</td></tr>
+            </tbody>
+          </table>
+          <p>验证：<code>dig +short linkseek.example.com</code> 应返回服务器 IP。</p>
+        </li>
+        <li>
+          <h4>申请 SSL 证书</h4>
+          <p>使用 certbot 为两个域名申请一张证书：</p>
+          <pre><code>sudo certbot certonly --standalone \
+  -d linkseek.example.com \
+  -d admin.linkseek.example.com</code></pre>
+          <p>证书续期由 certbot 自带的 systemd timer 自动处理。若要无感续期，需配置 <code>--deploy-hook</code> 在续期后重载 Nginx。</p>
+        </li>
+        <li>
+          <h4>配置环境变量</h4>
+          <p>从模板复制并填入你的密钥：</p>
+          <pre><code>cp .env.production.example .env.production</code></pre>
+          <p>编辑 <code>.env.production</code>，替换所有 <code>__XXX__</code> 占位符：</p>
+          <pre><code># 生成强随机值
+openssl rand -hex 32    # MYSQL_ROOT_PASSWORD
+openssl rand -hex 16    # MYSQL_PASSWORD（DATABASE_URL 里要一致）
+openssl rand -hex 32    # SESSION_SECRET
+
+# 自定义值
+ADMIN_PASSWORD=你的强密码</code></pre>
+          <div class="callout callout-warn">
+            <strong>关键：</strong><code>DATABASE_URL</code> 里的密码必须与 <code>MYSQL_PASSWORD</code> 完全一致。
+          </div>
+        </li>
+        <li>
+          <h4>放置 Nginx 网关配置</h4>
+          <p>仓库提供了双层网关的示例配置（<code>deploy/nginx/</code>），按需修改域名和证书路径后部署。</p>
+          <p>如果你已有反向代理（如 Caddy、Nginx Proxy Manager），直接把 <code>linkseek.example.com</code> 和 <code>admin.linkseek.example.com</code> 都反代到 <code>linkseek-app:7300</code> 即可——应用层会自动按 Host 分流。</p>
+        </li>
+        <li>
+          <h4>启动服务</h4>
+          <pre><code>docker compose -f docker-compose.prod.yml up -d
+
+# 查看启动状态
+docker compose -f docker-compose.prod.yml ps
+
+# 查看 app 日志（应看到迁移成功 + 管理员账号就绪）
+docker logs linkseek-app</code></pre>
+          <p>数据库迁移和管理员初始化在容器启动时自动执行（幂等），无需手动跑 seed。</p>
+        </li>
+        <li>
+          <h4>验证</h4>
+          <pre><code># 文档页应返回 HTML
+curl https://linkseek.example.com/
+
+# 健康检查
+curl https://linkseek.example.com/health
+# {"status":"ok"}
+
+# MCP 握手（先在后台建 Key）
+curl https://linkseek.example.com \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}'</code></pre>
+          <p>浏览器打开 <code>https://admin.linkseek.example.com/</code>，用 <code>ADMIN_PASSWORD</code> 登录后台，新建 Key 后即可接入 AI 工具。</p>
+        </li>
+      </ol>
+
+      <div class="callout callout-info">
+        <strong>境外站点抓取慢？</strong>如果你的服务器在国内，建议给 SearXNG 和 Browserless 配置出站 HTTP 代理（如 mihomo/clash）。
+        在 <code>docker-compose.prod.yml</code> 的对应服务下加 <code>HTTP_PROXY</code> / <code>HTTPS_PROXY</code> 环境变量，并在 app 的 <code>.env</code> 里配置 <code>NO_PROXY</code> 把内网域名排除掉。详见仓库 <code>docker-compose.prod.yml</code> 注释。
+      </div>
+
+      <h3>日常维护</h3>
+      <pre><code># 更新到最新版本
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+
+# 查看日志
+docker compose -f docker-compose.prod.yml logs -f app
+
+# 数据库备份
+docker exec linkseek-mysql mysqldump -u linkseek -pPASSWORD linkseek > backup.sql
+
+# 停止（保留数据）
+docker compose -f docker-compose.prod.yml down</code></pre>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <p>
+        <a href="https://github.com/honlnk/linkseek" target="_blank" rel="noopener">GitHub</a>
+        &nbsp;·&nbsp;
+        <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP 协议</a>
+        &nbsp;·&nbsp;
+        <a href="https://github.com/honlnk/linkseek/issues" target="_blank" rel="noopener">问题反馈</a>
+      </p>
+      <p style="margin-top: 12px; font-size: 13px;">linkseek · 开源 MCP 服务 · 自托管优先</p>
+    </div>
+  </footer>
+</body>
+</html>

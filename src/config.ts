@@ -48,6 +48,14 @@ const schema = z.object({
       return z.NEVER;
     }
   }),
+  // ---- 后台管理域名（多域名分流的标识）----
+  // 该域名的访问走完整 Vue SPA（登录 + Key 管理 + 用量）。
+  // 其余 Host（包括 localhost、IP、公开文档域名 linkseek.*）默认走「文档页 + MCP」模式：
+  //   GET  / → 文档页 public/docs.html
+  //   POST / → MCP 服务（AI 工具配裸域名 + Authorization）
+  // 这样本地 localhost:7300 与线上 linkseek.honlnk.com 行为一致，
+  // 后台对应 localhost:7317（vite dev）/ admin.linkseek.honlnk.com（生产）。
+  ADMIN_DOMAIN: z.string().default('admin.linkseek.honlnk.com'),
   SEARXNG_URL: z.string().url().default('http://localhost:8080'),
   // ---- 出站 HTTP 代理（国内服务器访问境外站点用）----
   // 配置后 web_fetch / web_search_and_fetch 抓取目标站点时走代理。

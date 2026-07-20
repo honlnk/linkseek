@@ -29,6 +29,7 @@ RUN pnpm exec prisma generate
 COPY tsconfig.json ./
 COPY types ./types
 COPY src ./src
+COPY public ./public
 COPY web/index.html web/vite.config.ts web/tsconfig.json web/tsconfig.node.json ./web/
 COPY web/src ./web/src
 
@@ -72,6 +73,8 @@ COPY --from=deps /app/web/node_modules ./web/node_modules
 # 从 builder 拷贝构建产物
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/web/dist ./web/dist
+# 公开文档页 HTML（src/index.ts 的 PUBLIC_DOMAIN 分流时返回此文件）
+COPY --from=builder /app/public ./public
 # Prisma client 是预生成的 JS，tsc 不会编译它；手动复制到 dist/generated
 # （src/lib/prisma.ts 引用 ../generated/prisma-client，编译后路径是 dist/generated/...）
 COPY --from=builder /app/src/generated ./dist/generated
