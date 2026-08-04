@@ -167,6 +167,8 @@ curl http://localhost:7300 \
 ├── web/                     # 管理后台 SPA（Vue 3 + Naive UI + Vite）
 │   └── src/views/           # 登录 / 总览 / Key列表 / Key详情
 ├── searxng/                 # SearXNG 配置
+│   ├── settings.yml         # 配置模板（含 __SEARXNG_PROXY__ 占位符）
+│   └── docker-entrypoint.sh # 启动时注入代理地址到 settings.yml
 ├── browser-fetch/           # 浏览器渲染微容器（Playwright + Chromium，独立进程）
 │   └── src/                 # Express /render 服务 + SSRF 防护
 ├── deploy/                  # 生产部署配置
