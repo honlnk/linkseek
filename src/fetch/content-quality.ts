@@ -5,7 +5,11 @@
  * 检测策略参考 mrkrsl/web-search-mcp 的 isLowQualityContent，并针对中文站点补充特征。
  */
 
-/** WAF / 反爬挑战页的特征标记（小写匹配） */
+/**
+ * WAF / 反爬挑战页的特征标记。
+ * 注意：turndown 转 Markdown 时会给 _ 加转义（_waf_ → \_waf\_），
+ * 所以检测时先去除反斜杠转义再匹配，避免漏判。
+ */
 const WAF_MARKERS: string[] = [
   // 通用 WAF 挑战标记
   '_waf_',
@@ -32,9 +36,6 @@ const WAF_MARKERS: string[] = [
   '异常流量',
 ];
 
-/** WAF 标记的最小出现次数（任一命中即判定为低质） */
-const MIN_WAF_MARKER_HITS = 1;
-
 /**
  * 判断抓取到的 Markdown 正文是否为低质量内容（WAF 挑战页 / 乱码 / 反爬拦截）。
  *
@@ -46,21 +47,19 @@ const MIN_WAF_MARKER_HITS = 1;
 export function isLowQualityContent(content: string): boolean {
   if (!content) return true;
 
-  const lower = content.toLowerCase();
+  // 去除 markdown 转义反斜杠（turndown 会把 _waf_ 转成 \_waf\_），再做标记匹配
+  const unescaped = content.replace(/\\(.)/g, '$1');
+  const lower = unescaped.toLowerCase();
 
-  // 1. WAF / 反爬标记检测
-  let wafHits = 0;
+  // 1. WAF / 反爬标记检测（任一命中即判定）
   for (const marker of WAF_MARKERS) {
-    if (lower.includes(marker)) {
-      wafHits++;
-      if (wafHits >= MIN_WAF_MARKER_HITS) return true;
-    }
+    if (lower.includes(marker)) return true;
   }
 
-  const len = content.length;
+  const len = unescaped.length;
 
-  // 2. 极短内容（正常文章正文不会少于 100 字符）
-  if (len < 100) return true;
+  // 2. 极短内容（正常网页正文不会少于 50 字符；WAF 挑战页/错误页通常极短）
+  if (len < 50) return true;
 
   // 3. 文本密度：统计 CJK 字符 + 拉丁字母 + 阿拉伯数字，计算占比
   if (len > 200) {

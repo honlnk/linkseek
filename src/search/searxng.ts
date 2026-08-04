@@ -46,9 +46,10 @@ export class SearXngProvider implements SearchProvider {
       q: query,
       format: 'json',
       pageno: String(page),
-      language,
       safesearch: '0',
     });
+    // language 仅在有值时设置（空字符串会导致 SearXNG 返回 400）
+    if (language) params.set('language', language);
     if (timeRange) params.set('time_range', timeRange);
     if (categories) params.set('categories', categories);
     if (engines) params.set('engines', engines);

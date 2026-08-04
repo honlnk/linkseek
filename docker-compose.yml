@@ -36,6 +36,14 @@ services:
       - searxng-data:/etc/searxng/data
     environment:
       - SEARXNG_BASE_URL=http://localhost:8081/
+      # 本地开发：通过宿主机 Clash Verge 代理访问境外搜索引擎。
+      # 依赖 Clash 的 allow-lan: true（局域网连接已开启）。
+      - HTTP_PROXY=http://host.docker.internal:7897
+      - HTTPS_PROXY=http://host.docker.internal:7897
+      - NO_PROXY=localhost,127.0.0.1,linkseek-app,linkseek-mysql,linkseek-searxng
+    extra_hosts:
+      # 确保 Docker Desktop 下 host.docker.internal 可解析
+      - "host.docker.internal:host-gateway"
     networks:
       - linkseek-net
 
