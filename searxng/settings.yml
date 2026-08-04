@@ -26,8 +26,9 @@ ui:
   static_use_hash: true
 
 outgoing:
-  # 通过宿主机代理访问 Google/DuckDuckGo 等境外搜索引擎。
-  # 本地开发：host.docker.internal + Clash Verge 的 mixed-port（需 allow-lan: true）
-  # 生产部署：改回 http://172.17.0.1:7890（Linux docker0 IP + mihomo 端口）
+  # 代理地址在容器启动时由 entrypoint 脚本从 SEARXNG_PROXY 环境变量注入。
+  # 本地开发：docker-compose.yml 设 SEARXNG_PROXY=http://host.docker.internal:7897
+  # 生产部署：docker-compose.prod.yml 设 SEARXNG_PROXY=http://172.17.0.1:7890
+  # 占位符 __SEARXNG_PROXY__ 在 searxng/docker-entrypoint.sh 中被 sed 替换。
   proxies:
-    all://: http://host.docker.internal:7897
+    all://: __SEARXNG_PROXY__
