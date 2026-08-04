@@ -36,8 +36,10 @@ export class SearXngProvider implements SearchProvider {
     const {
       maxResults = 10,
       timeRange,
-      language = 'zh-CN',
+      language = '',
       page = 1,
+      categories,
+      engines,
     } = options;
 
     const params = new URLSearchParams({
@@ -48,6 +50,8 @@ export class SearXngProvider implements SearchProvider {
       safesearch: '0',
     });
     if (timeRange) params.set('time_range', timeRange);
+    if (categories) params.set('categories', categories);
+    if (engines) params.set('engines', engines);
 
     const url = `${this.baseUrl}/search?${params}`;
     logger.debug({ url, query }, 'SearXNG 搜索请求');
@@ -68,10 +72,21 @@ export class SearXngProvider implements SearchProvider {
     const data = (await response.json()) as SearXngResponse;
     const raw = data.results ?? [];
 
-    // 转换 + 过滤无效项 + URL 去重
+    // 记录无响应引擎（不阻塞主流程，仅告警）
+    if (data.unresponsive_engines && data.unresponsive_engines.length > 0) {
+      logger.warn(
+        { query, unresponsive_engines: data.unresponsive_engines },
+        '部分搜索引擎无响应',
+      );
+    }
+
+    // 按 score 降序排序（SearXNG 跨引擎合并后已计算综合 score；无 score 的保持原顺序排在后面）
+    const sorted = [...raw].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+    // 转换 + 过滤无效项 + URL 规范化去重
     const seen = new Set<string>();
     const results: SearchResult[] = [];
-    for (const r of raw) {
+    for (const r of sorted) {
       if (!r.url || !r.title) continue;
       const canonical = canonicalizeUrl(r.url);
       if (seen.has(canonical)) continue;
@@ -81,6 +96,7 @@ export class SearXngProvider implements SearchProvider {
         url: r.url,
         snippet: r.content?.trim() || '',
         engines: r.engines,
+        score: r.score,
       });
       if (results.length >= maxResults) break;
     }
@@ -90,12 +106,57 @@ export class SearXngProvider implements SearchProvider {
   }
 }
 
-/** URL 规范化去重（去除 fragment、统一协议为小写） */
+/** 需要剥离的追踪/营销参数（前缀匹配 + 精确匹配） */
+const TRACKING_QUERY_PARAMS: string[] = [
+  // Google / Facebook / Instagram 追踪
+  'gclid', 'fbclid', 'igshid', 'dclid', 'msclkid',
+  // Mailchimp / HubSpot / Marketo
+  'mc_cid', 'mc_eid', '_hsenc', '_hsmi', 'mkt_tok',
+  // 通用引用追踪
+  'ref', 'ref_src', 'ref_url', 'referer', 'referrer',
+  // 中国站点常见追踪
+  'spm', 'scm', 'pvid', 'utm_source', 'campaign_id',
+];
+
+/**
+ * URL 规范化去重：
+ * - 剥离 fragment
+ * - 剥离追踪参数（utm_* 前缀 + 已知追踪参数）
+ * - 统一协议、主机为小写
+ * - 去除默认端口（http:80 / https:443）
+ * - 去除路径尾斜杠（根路径 / 保留）
+ */
 function canonicalizeUrl(url: string): string {
   try {
     const parsed = new URL(url);
     parsed.hash = '';
-    return parsed.toString().toLowerCase();
+
+    // 剥离追踪参数：utm_ 前缀 + 精确匹配清单
+    const keysToDelete: string[] = [];
+    parsed.searchParams.forEach((_v, k) => {
+      const lk = k.toLowerCase();
+      if (lk.startsWith('utm_') || TRACKING_QUERY_PARAMS.includes(lk)) {
+        keysToDelete.push(k);
+      }
+    });
+    keysToDelete.forEach((k) => parsed.searchParams.delete(k));
+
+    // 去默认端口
+    const isDefaultPort =
+      (parsed.protocol === 'http:' && parsed.port === '80') ||
+      (parsed.protocol === 'https:' && parsed.port === '443');
+    if (isDefaultPort) parsed.port = '';
+
+    // 去尾斜杠（仅非根路径）
+    if (parsed.pathname.length > 1 && parsed.pathname.endsWith('/')) {
+      parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+    }
+
+    // 协议 + 主机小写，路径/查询保持原样（查询参数大小写有语义）
+    parsed.protocol = parsed.protocol.toLowerCase();
+    parsed.hostname = parsed.hostname.toLowerCase();
+
+    return parsed.toString();
   } catch {
     return url;
   }

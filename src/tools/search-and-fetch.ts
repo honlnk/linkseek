@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { searchProvider } from '../search/searxng.js';
 import { timeRangeValues } from '../search/searxng.js';
 import { fetchPageAsMarkdown } from '../fetch/http-fetch.js';
+import { isLowQualityContent } from '../fetch/content-quality.js';
 import { logger } from '../utils/logger.js';
 
 export const searchAndFetchInput = {
@@ -25,7 +26,22 @@ export const searchAndFetchInput = {
     .enum(timeRangeValues as [string, ...string[]])
     .optional()
     .describe('时间范围过滤：day / month / year'),
-  language: z.string().optional().describe('搜索语言偏好，默认 zh-CN'),
+  language: z
+    .string()
+    .optional()
+    .describe('搜索语言偏好，如 zh-CN、en、all。不传则自动判断'),
+  categories: z
+    .string()
+    .optional()
+    .describe(
+      '搜索分类（逗号分隔）：general、it、science、news、images 等。不传则用 general。',
+    ),
+  engines: z
+    .string()
+    .optional()
+    .describe(
+      '指定搜索引擎（逗号分隔）：google、bing、ddg、wikipedia 等。不传则自动选择。',
+    ),
 };
 
 export const searchAndFetchDescription = `搜索关键词并自动获取前几个结果的页面正文，一次调用完成「搜索 + 获取」。
@@ -40,7 +56,7 @@ export function registerSearchAndFetch(server: McpServer): void {
   server.registerTool(
     'web_search_and_fetch',
     { description: searchAndFetchDescription, inputSchema: searchAndFetchInput },
-    async ({ query, fetchCount = 3, searchMaxResults = 10, timeRange, language }) => {
+    async ({ query, fetchCount = 3, searchMaxResults = 10, timeRange, language, categories, engines }) => {
       // 1. 搜索
       let results;
       try {
@@ -48,6 +64,8 @@ export function registerSearchAndFetch(server: McpServer): void {
           maxResults: searchMaxResults,
           timeRange: timeRange as 'day' | 'month' | 'year' | undefined,
           language,
+          categories,
+          engines,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -77,9 +95,17 @@ export function registerSearchAndFetch(server: McpServer): void {
         const header = `## ${i + 1}. ${r.title}\nURL: ${r.url}\n摘要: ${r.snippet}`;
 
         if (fr.status === 'fulfilled') {
-          // 截取正文摘要（避免单条过长，整篇正文已有 100KB 截断）
-          const body = fr.value.slice(0, 8000);
-          sections.push(`${header}\n\n### 正文\n${body}`);
+          // 检测 WAF 挑战页 / 乱码内容，避免污染整体结果
+          if (isLowQualityContent(fr.value)) {
+            logger.warn({ url: r.url }, 'search_and_fetch 疑似 WAF 挑战页，跳过正文');
+            sections.push(
+              `${header}\n\n### 正文获取失败\n疑似 WAF 挑战页或反爬拦截，建议用 web_fetch_render 工具重试该 URL。`,
+            );
+          } else {
+            // 截取正文摘要（避免单条过长，整篇正文已有 100KB 截断）
+            const body = fr.value.slice(0, 8000);
+            sections.push(`${header}\n\n### 正文\n${body}`);
+          }
         } else {
           const reason = fr.reason instanceof Error ? fr.reason.message : String(fr.reason);
           logger.warn({ url: r.url, reason }, 'search_and_fetch 单页获取失败');

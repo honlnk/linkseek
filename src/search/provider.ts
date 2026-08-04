@@ -6,10 +6,14 @@ export interface SearchOptions {
   maxResults?: number;
   /** 时间范围过滤 */
   timeRange?: TimeRange;
-  /** 搜索语言偏好，默认 zh-CN */
+  /** 搜索语言偏好，默认 auto（空字符串=让 SearXNG 按 query 自动判断） */
   language?: string;
   /** 页码，默认 1 */
   page?: number;
+  /** 搜索分类（逗号分隔），如 general / it / science / news / images。不传则用 SearXNG 默认 */
+  categories?: string;
+  /** 指定引擎（逗号分隔的引擎名或 shortcut），如 google,bing / ddg。不传则用 SearXNG 默认 */
+  engines?: string;
 }
 
 export interface SearchResult {
@@ -19,6 +23,8 @@ export interface SearchResult {
   snippet: string;
   /** 来源引擎 */
   engines?: string[];
+  /** SearXNG 综合评分（跨引擎合并后计算，仅用于排序参考） */
+  score?: number;
 }
 
 /** 搜索后端抽象 */

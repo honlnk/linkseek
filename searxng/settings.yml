@@ -9,7 +9,8 @@ general:
 search:
   safe_search: 0
   autocomplete: ""
-  default_lang: "zh-CN"
+  # auto: SearXNG 按 Accept-Language / query 自动判断，避免英文 query 被强制带偏到中文结果
+  default_lang: "auto"
   formats:
     - html
     - json
