@@ -113,7 +113,7 @@ export async function fetchPageAsMarkdown(rawUrl: string): Promise<string> {
 
   const markdown = htmlToMarkdown(html, currentUrl.href);
   if (!markdown) {
-    throw new FetchError('页面正文为空（可能是 JS 渲染的 SPA，当前不支持浏览器渲染）', 'http');
+    throw new FetchError('页面正文为空（可能是 JS 渲染的 SPA），建议使用 web_fetch_render 工具重试', 'http');
   }
   return truncate(markdown);
 }

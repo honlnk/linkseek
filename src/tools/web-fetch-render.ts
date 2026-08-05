@@ -10,9 +10,11 @@ export const webFetchRenderInput = {
 
 export const webFetchRenderDescription = `使用无头浏览器渲染获取指定 URL 的网页内容，返回 Markdown 格式正文。
 
-- 用于 JS 动态渲染页面（SPA、前端框架渲染），web_fetch 获取不到内容时使用
+- 已启用 stealth 模式（navigator.webdriver 等指纹补丁），可绕过基础 WAF/反爬拦截
+- 真实浏览器 UA + 1920×1080 视口 + zh-CN 语言环境
+- 用于 JS 动态渲染页面（SPA、前端框架渲染），web_fetch 获取不到内容或被 WAF 拦截时使用
 - 启动浏览器开销大、响应慢（冷启动 1-3 秒），资源消耗高
-- 优先尝试 web_fetch，仅在返回为空或页面为 JS 渲染时才用本工具
+- 优先尝试 web_fetch，仅在返回为空或内容疑似 WAF 挑战页时才用本工具
 - 内置 SSRF 防护，禁止访问内网地址和云元数据端点
 - 正文超过 100KB 会被截断`;
 

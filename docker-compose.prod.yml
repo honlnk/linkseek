@@ -114,6 +114,8 @@ services:
       retries: 5
     # Browserless + Chromium 实例池，512m 会 OOM；1g 为官方推荐下限
     mem_limit: 1g
+    # Chromium 默认 /dev/shm 仅 64MB，渲染重页面易崩溃；设 2g 避免共享内存不足
+    shm_size: 2g
     networks:
       - linkseek-net
     # 不映射端口 —— 仅容器间访问

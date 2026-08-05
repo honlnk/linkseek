@@ -4,6 +4,8 @@ import { searchProvider } from '../search/searxng.js';
 import { timeRangeValues } from '../search/searxng.js';
 import { fetchPageAsMarkdown } from '../fetch/http-fetch.js';
 import { isLowQualityContent } from '../fetch/content-quality.js';
+import { browserFetchProvider } from '../fetch/browser-fetch.js';
+import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 
 export const searchAndFetchInput = {
@@ -95,14 +97,37 @@ export function registerSearchAndFetch(server: McpServer): void {
         const header = `## ${i + 1}. ${r.title}\nURL: ${r.url}\n摘要: ${r.snippet}`;
 
         if (fr.status === 'fulfilled') {
-          // 检测 WAF 挑战页 / 乱码内容，避免污染整体结果
+          // 检测 WAF 挑战页 / 乱码内容
           if (isLowQualityContent(fr.value)) {
-            logger.warn({ url: r.url }, 'search_and_fetch 疑似 WAF 挑战页，跳过正文');
-            sections.push(
-              `${header}\n\n### 正文获取失败\n疑似 WAF 挑战页或反爬拦截，建议用 web_fetch_render 工具重试该 URL。`,
-            );
+            // 信号驱动降级：检测到低质内容 → 自动用 stealth 浏览器重抓
+            if (config.BROWSER_FETCH_ENABLED) {
+              logger.warn({ url: r.url }, 'search_and_fetch 疑似 WAF 挑战页，自动降级到浏览器渲染');
+              try {
+                const rendered = await browserFetchProvider.renderAsMarkdown(r.url);
+                if (rendered && !isLowQualityContent(rendered)) {
+                  const body = rendered.slice(0, 8000);
+                  sections.push(`${header}\n\n### 正文（经浏览器渲染）\n${body}`);
+                } else {
+                  sections.push(
+                    `${header}\n\n### 正文获取失败\n浏览器渲染后仍为低质内容，建议手动用 web_fetch_render 工具检查该 URL。`,
+                  );
+                }
+              } catch (renderErr) {
+                const reason = renderErr instanceof Error ? renderErr.message : String(renderErr);
+                logger.warn({ url: r.url, reason }, 'search_and_fetch 浏览器降级也失败');
+                sections.push(
+                  `${header}\n\n### 正文获取失败\n疑似 WAF 挑战页，浏览器渲染也失败：${reason}`,
+                );
+              }
+            } else {
+              // 浏览器未启用，回退到提示模式
+              logger.warn({ url: r.url }, 'search_and_fetch 疑似 WAF 挑战页（浏览器未启用，仅标注）');
+              sections.push(
+                `${header}\n\n### 正文获取失败\n疑似 WAF 挑战页或反爬拦截，建议用 web_fetch_render 工具重试该 URL。`,
+              );
+            }
           } else {
-            // 截取正文摘要（避免单条过长，整篇正文已有 100KB 截断）
+            // 正常内容：截取正文摘要（避免单条过长，整篇正文已有 100KB 截断）
             const body = fr.value.slice(0, 8000);
             sections.push(`${header}\n\n### 正文\n${body}`);
           }
