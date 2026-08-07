@@ -2,6 +2,30 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { requireAdmin } from '../auth/session.js';
 
+/**
+ * 把 Date 转成 YYYY-MM-DD（UTC）。
+ * 全程统一用 UTC 日期做分桶和边界，避免 setHours（本地时区 0 点）
+ * 和 toISOString（UTC）混用导致日期错位。
+ */
+function toUTCDateKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * 生成从 startDate 到 endDate（含）的连续 UTC 日期键数组。
+ * 用于补齐趋势图里没有调用的日期，确保"今天"总是出现在图表末尾。
+ */
+function fillDateRange(startDate: string, endDate: string): string[] {
+  const dates: string[] = [];
+  const d = new Date(startDate + 'T00:00:00Z');
+  const end = new Date(endDate + 'T00:00:00Z');
+  while (d <= end) {
+    dates.push(toUTCDateKey(d));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return dates;
+}
+
 export function createStatsRouter(): Router {
   const router = Router();
   router.use(requireAdmin);
@@ -23,10 +47,10 @@ export function createStatsRouter(): Router {
       prisma.apiKey.count(),
     ]);
 
-    // 近 N 天每日用量趋势（按工具分组）
+    // 近 N 天每日用量趋势（按工具分组），全程用 UTC 日期避免时区错位
     const since = new Date();
-    since.setDate(since.getDate() - days);
-    since.setHours(0, 0, 0, 0);
+    since.setUTCDate(since.getUTCDate() - days);
+    since.setUTCHours(0, 0, 0, 0);
 
     const daily = await prisma.usageLog.findMany({
       where: { createdAt: { gte: since } },
@@ -36,9 +60,17 @@ export function createStatsRouter(): Router {
     // 聚合成 { date: { tool: count } }
     const trend: Record<string, Record<string, number>> = {};
     for (const log of daily) {
-      const dateKey = log.createdAt.toISOString().slice(0, 10); // YYYY-MM-DD
+      const dateKey = toUTCDateKey(log.createdAt);
       if (!trend[dateKey]) trend[dateKey] = {};
       trend[dateKey][log.toolName] = (trend[dateKey][log.toolName] ?? 0) + 1;
+    }
+
+    // 补齐缺失的日期，确保趋势图连续（每天一列，含今天）
+    const todayKey = toUTCDateKey(new Date());
+    const sinceKey = toUTCDateKey(since);
+    const allDates = fillDateRange(sinceKey, todayKey);
+    for (const d of allDates) {
+      if (!trend[d]) trend[d] = {};
     }
 
     res.json({
@@ -67,8 +99,8 @@ export function createStatsRouter(): Router {
     }
 
     const since = new Date();
-    since.setDate(since.getDate() - days);
-    since.setHours(0, 0, 0, 0);
+    since.setUTCDate(since.getUTCDate() - days);
+    since.setUTCHours(0, 0, 0, 0);
 
     const [total, byTool, daily] = await Promise.all([
       prisma.usageLog.count({ where: { keyId: key.id } }),
@@ -85,9 +117,17 @@ export function createStatsRouter(): Router {
 
     const trend: Record<string, Record<string, number>> = {};
     for (const log of daily) {
-      const dateKey = log.createdAt.toISOString().slice(0, 10);
+      const dateKey = toUTCDateKey(log.createdAt);
       if (!trend[dateKey]) trend[dateKey] = {};
       trend[dateKey][log.toolName] = (trend[dateKey][log.toolName] ?? 0) + 1;
+    }
+
+    // 补齐缺失的日期
+    const todayKey = toUTCDateKey(new Date());
+    const sinceKey = toUTCDateKey(since);
+    const allDates = fillDateRange(sinceKey, todayKey);
+    for (const d of allDates) {
+      if (!trend[d]) trend[d] = {};
     }
 
     res.json({

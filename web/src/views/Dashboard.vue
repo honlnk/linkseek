@@ -20,6 +20,10 @@ const toolColors: Record<string, string> = {
   web_search: '#2080f0',
   web_fetch: '#18a058',
   web_search_and_fetch: '#f0a020',
+  web_fetch_render: '#d03050',
+  list_models: '#8a2be2',
+  web_fetch_answer: '#36ad6a',
+  web_search_answer: '#ff9d3d',
 };
 
 async function load() {
