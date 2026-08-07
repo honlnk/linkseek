@@ -62,12 +62,12 @@ app.use('/api', createAdminRouter());
 // 无状态模式：每个请求创建独立的 transport + server，不保留会话状态。
 // 适合 Nginx 反代 + API Key 鉴权的部署形态。
 
-function createServer() {
+async function createServer() {
   const server = new McpServer(
     { name: 'linkseek', version: '0.1.0' },
     { capabilities: { logging: {} } },
   );
-  registerTools(server);
+  await registerTools(server);
   return server;
 }
 
@@ -77,7 +77,7 @@ const mcpAuth = requireBearerAuth({
 
 // MCP 请求处理（无状态模式：每个请求独立 transport + server）
 async function handleMcpRequest(req: express.Request, res: express.Response) {
-  const server = createServer();
+  const server = await createServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   try {
     await server.connect(transport);

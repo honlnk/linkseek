@@ -59,3 +59,26 @@ export interface KeyStats {
   byTool: { tool: string; count: number }[];
   trend: { date: string; counts: Record<string, number> }[];
 }
+
+// ---- LLM Provider ----
+
+export type Protocol = 'openai' | 'openai-responses' | 'anthropic' | 'gemini';
+
+export interface LlmProviderItem {
+  id: string;
+  name: string;
+  protocol: Protocol;
+  baseUrl: string;
+  apiKeyMasked: string;
+  model: string;
+  models: string[];
+  enabled: boolean;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LlmProviderList {
+  providers: LlmProviderItem[];
+  defaultId: string | null;
+}

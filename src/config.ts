@@ -78,6 +78,11 @@ const schema = z.object({
   // Chromium 页面请求代理（通过 launch args --proxy-server 传入）。
   // 不配则直连。国内服务器访问境外站点时需设为与 HTTP_PROXY 一致的地址。
   BROWSER_FETCH_PROXY: z.string().optional(),
+  // ---- AI 增强（web_fetch_answer / web_search_answer）----
+  // LLM 调用超时（毫秒）；给慢模型（如 o1 / 深度思考）留足时间
+  LLM_TIMEOUT: z.coerce.number().int().positive().default(60_000),
+  // QA 回答最大 token 数
+  LLM_MAX_TOKENS: z.coerce.number().int().positive().default(2000),
   FETCH_TIMEOUT: z.coerce.number().int().positive().default(30_000),
   MAX_RESPONSE_SIZE: z.coerce.number().int().positive().default(5_242_880),
   MAX_REDIRECTS: z.coerce.number().int().positive().default(5),

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createAuthRouter } from './auth-routes.js';
 import { createKeyRouter } from './key-routes.js';
 import { createStatsRouter } from './stats-routes.js';
+import { createLlmProviderRouter } from './llm-provider-routes.js';
 
 /**
  * 管理后台 REST API 总路由。
@@ -15,5 +16,6 @@ export function createAdminRouter(): Router {
   router.use('/', createAuthRouter());
   router.use('/keys', createKeyRouter());
   router.use('/stats', createStatsRouter());
+  router.use('/llm-providers', createLlmProviderRouter());
   return router;
 }
