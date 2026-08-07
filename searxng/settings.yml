@@ -9,7 +9,8 @@ general:
 search:
   safe_search: 0
   autocomplete: ""
-  default_lang: "zh-CN"
+  # auto: SearXNG 按 Accept-Language / query 自动判断，避免英文 query 被强制带偏到中文结果
+  default_lang: "auto"
   formats:
     - html
     - json
@@ -25,14 +26,9 @@ ui:
   static_use_hash: true
 
 outgoing:
-  # 服务器在国内，通过宿主机 mihomo 代理访问 Google/DuckDuckGo 等境外搜索引擎
-  # 依赖 docker0 IP（172.17.0.1）+ mihomo allow-lan: true
+  # 代理地址在容器启动时由 entrypoint 脚本从 SEARXNG_PROXY 环境变量注入。
+  # 本地开发：docker-compose.yml 设 SEARXNG_PROXY=http://host.docker.internal:7897
+  # 生产部署：docker-compose.prod.yml 设 SEARXNG_PROXY=http://172.17.0.1:7890
+  # 占位符 __SEARXNG_PROXY__ 在 searxng/docker-entrypoint.sh 中被 sed 替换。
   proxies:
-    all://: http://172.17.0.1:7890
-  # 内部容器不走代理
-  no_proxy:
-    - localhost
-    - 127.0.0.1
-    - linkseek-app
-    - linkseek-mysql
-    - linkseek-searxng
+    all://: __SEARXNG_PROXY__

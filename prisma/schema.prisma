@@ -46,6 +46,31 @@ model UsageLog {
   @@index([createdAt])
 }
 
+/// LLM Provider —— 配置的 AI 模型供应商（用于 web_fetch_answer / web_search_answer 工具）
+model LlmProvider {
+  id        String   @id @default(cuid())
+  /// 显示名，如「DeepSeek 主力」「Claude 备用」
+  name      String
+  /// 协议：openai | openai-responses | anthropic | gemini
+  protocol  String
+  /// API 基地址，如 https://api.deepseek.com/v1
+  baseUrl   String
+  /// API Key（明文存储，后端需用它调 LLM）
+  apiKey    String
+  /// 默认模型名，如 deepseek-chat
+  model     String
+  /// 可用模型列表（JSON 数组字符串，从上游拉取后缓存）
+  models    String   @default("[]")
+  /// 是否启用
+  enabled   Boolean  @default(true)
+  /// 是否为默认 Provider（全局唯一）
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([enabled])
+}
+
 /// 管理员账号（单一管理员，固定 id=1）
 model AdminUser {
   id           Int      @id @default(1)

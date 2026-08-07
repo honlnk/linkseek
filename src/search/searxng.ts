@@ -36,24 +36,36 @@ export class SearXngProvider implements SearchProvider {
     const {
       maxResults = 10,
       timeRange,
-      language = 'zh-CN',
+      language = '',
       page = 1,
+      categories,
+      engines,
     } = options;
+
+    // 语言推断：用户显式传的 language 优先，没传则按 query 内容启发式判断
+    const effectiveLang = language || detectLanguage(query);
 
     const params = new URLSearchParams({
       q: query,
       format: 'json',
       pageno: String(page),
-      language,
       safesearch: '0',
     });
+    // language 仅在有值时设置（空字符串会导致 SearXNG 返回 400）
+    if (effectiveLang) params.set('language', effectiveLang);
     if (timeRange) params.set('time_range', timeRange);
+    if (categories) params.set('categories', categories);
+    if (engines) params.set('engines', engines);
 
     const url = `${this.baseUrl}/search?${params}`;
-    logger.debug({ url, query }, 'SearXNG 搜索请求');
+    logger.debug({ url, query, effectiveLang }, 'SearXNG 搜索请求');
 
     const response = await fetch(url, {
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        // Accept-Language 配合 effectiveLang，让 SearXNG 的 default_lang: auto 判断更准
+        'Accept-Language': toAcceptLanguage(effectiveLang),
+      },
       dispatcher: internalAgent, // SearXNG 是可信内网服务，不走代理也不做 SSRF 拦截
       signal: AbortSignal.timeout(15_000),
     });
@@ -68,10 +80,32 @@ export class SearXngProvider implements SearchProvider {
     const data = (await response.json()) as SearXngResponse;
     const raw = data.results ?? [];
 
-    // 转换 + 过滤无效项 + URL 去重
+    // 记录无响应引擎（不阻塞主流程，仅告警）
+    if (data.unresponsive_engines && data.unresponsive_engines.length > 0) {
+      logger.warn(
+        { query, unresponsive_engines: data.unresponsive_engines },
+        '部分搜索引擎无响应',
+      );
+    }
+
+    // 按有效 score 降序排序（原始 score + 来源权威性 bonus + 用户优先域名提权）
+    const preferredSites = normalizePreferredSites(options.preferredSites);
+    const scored = raw.map((r) => {
+      const boost = getAuthorityBoost(r.url, preferredSites);
+      const effectiveScore = (r.score ?? 0) + boost.bonus;
+      return { result: r, effectiveScore, boost };
+    });
+    scored.sort((a, b) => {
+      // 用户显式指定的站点永远排在其他来源之前；组内仍按相关性和静态权威性排序
+      if (a.boost.preferred !== b.boost.preferred) return a.boost.preferred ? -1 : 1;
+      return b.effectiveScore - a.effectiveScore;
+    });
+    const sorted = scored.map((s) => s.result);
+
+    // 转换 + 过滤无效项 + URL 规范化去重
     const seen = new Set<string>();
     const results: SearchResult[] = [];
-    for (const r of raw) {
+    for (const r of sorted) {
       if (!r.url || !r.title) continue;
       const canonical = canonicalizeUrl(r.url);
       if (seen.has(canonical)) continue;
@@ -81,6 +115,7 @@ export class SearXngProvider implements SearchProvider {
         url: r.url,
         snippet: r.content?.trim() || '',
         engines: r.engines,
+        score: r.score,
       });
       if (results.length >= maxResults) break;
     }
@@ -90,12 +125,186 @@ export class SearXngProvider implements SearchProvider {
   }
 }
 
-/** URL 规范化去重（去除 fragment、统一协议为小写） */
+/**
+ * 按 query 内容启发式判断语言。
+ * - 只含 CJK 字符 → zh-CN（CJK 引擎覆盖好，中文结果质量高）
+ * - 只含拉丁字母/数字/符号 → en（避免被中文引擎带偏）
+ * - 中文与拉丁字母同时出现（如 "Claude Code 使用方法"）→ all
+ *   混合查询强制单一语言会丢失另一半有效结果，交给 SearXNG 跨语言召回更稳
+ * - 无法判断（纯数字/符号）→ ''（交给 SearXNG auto）
+ *
+ * 用户显式传入 language 时本函数不会被调用（见 search() 中的 effectiveLang 推导）。
+ */
+function detectLanguage(query: string): string {
+  const hasCJK = /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(query);
+  const hasLatin = /[a-zA-Z]/.test(query);
+  if (hasCJK && hasLatin) return 'all';
+  if (hasCJK) return 'zh-CN';
+  if (hasLatin) return 'en';
+  return '';
+}
+
+/** 把 language 代码转成 Accept-Language header 值 */
+function toAcceptLanguage(lang: string): string {
+  switch (lang) {
+    case 'en':
+      return 'en-US,en;q=0.9';
+    case 'zh-CN':
+      return 'zh-CN,zh;q=0.9';
+    case 'all':
+      // 混合查询：中英并重，让 SearXNG 跨语言召回
+      return 'zh-CN,zh;q=0.8,en-US,en;q=0.8';
+    default:
+      // 不确定时给一个中英混合的偏好（英文优先，兼顾中文）
+      return 'en-US,en;q=0.8,zh-CN;q=0.6';
+  }
+}
+
+/**
+ * 来源权威性加权：在 SearXNG 原始 score 基础上加固定 bonus。
+ *
+ * SearXNG score 通常在 1~10 区间，bonus 设 1~5 足以在同分段内提权，
+ * 但不至于完全覆盖原始相关性判断（不会把 score=1 的官方源强提到 score=10 的博客前面）。
+ *
+ * 设计原则：
+ * - 只提权，不降权（不主动惩罚任何来源，避免误杀）
+ * - 精确匹配优先，正则兜底
+ * - bonus 随权威性递减：官方源码 > 权威百科 > 技术文档 > 社区 > 官方域名后缀
+ */
+const AUTHORITY_RULES: { pattern: RegExp; bonus: number }[] = [
+  // 官方源码仓库 / 开发者平台，最高权威
+  { pattern: /^github\.com\//, bonus: 5 },
+  // 权威百科
+  { pattern: /^[a-z]+\.wikipedia\.org\//, bonus: 4 },
+  // 官方技术文档（高频官方站，精确匹配域名）
+  { pattern: /^developer\.mozilla\.org\//, bonus: 4 },
+  // 开发者社区
+  { pattern: /^(stackoverflow|stackexchange|serverfault)\.com\//, bonus: 3 },
+  // 各技术栈官方文档站
+  {
+    pattern:
+      /^(react|nextjs|vuejs|nuxt|angular|nodejs|bun\.sh|deno\.land|tailwindcss|typescriptlang|python|go\.dev|rust-lang|kotlinlang|jetbrains|vitejs|svelte)\./,
+    bonus: 3,
+  },
+  // 官方域名后缀（粗粒度兜底，bonus 低避免误提权）
+  { pattern: /\.(dev|org)\//, bonus: 1 },
+];
+
+interface AuthorityBoost {
+  bonus: number;
+  preferred: boolean;
+}
+
+/** 用户优先域名提权的 bonus 值（高于所有固定权威规则） */
+const PREFERRED_SITE_BONUS = 10;
+
+/**
+ * 归一化用户传入的优先站点。
+ * schema 要求传域名，但这里也宽容完整 URL、路径和端口，避免 AI 偶发格式偏差。
+ */
+function normalizePreferredSites(sites: string[] | undefined): string[] {
+  const normalized = new Set<string>();
+  for (const value of sites ?? []) {
+    const raw = value.trim().toLowerCase();
+    if (!raw) continue;
+    try {
+      const hostname = new URL(raw.includes('://') ? raw : `https://${raw}`).hostname;
+      if (hostname) normalized.add(hostname);
+    } catch {
+      // 无法解析的输入不参与匹配，避免模糊匹配导致误提权
+    }
+  }
+  return [...normalized];
+}
+
+/**
+ * 计算 URL 的权威性加权 bonus（0 = 无提权）。
+ *
+ * 两级提权：
+ * 1. 用户显式指定的 preferredSites（最高优先，+10）
+ * 2. 静态权威规则（GitHub/Wikipedia/官方文档等，+1~+5）
+ * 两者不叠加，取最高 bonus。
+ */
+function getAuthorityBoost(url: string | undefined, preferredSites: string[] = []): AuthorityBoost {
+  if (!url) return { bonus: 0, preferred: false };
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch {
+    return { bonus: 0, preferred: false };
+  }
+
+  // 用户优先域名（精确匹配或子域名匹配）
+  if (preferredSites.length > 0) {
+    for (const site of preferredSites) {
+      if (hostname === site || hostname.endsWith(`.${site}`)) {
+        return { bonus: PREFERRED_SITE_BONUS, preferred: true };
+      }
+    }
+  }
+
+  // 静态权威规则
+  const fullForMatch = hostname + '/'; // 补斜杠让正则 ^xxx/ 能匹配根路径
+  let bonus = 0;
+  for (const rule of AUTHORITY_RULES) {
+    if (rule.pattern.test(fullForMatch)) {
+      bonus = Math.max(bonus, rule.bonus); // 多条命中取最高 bonus，不叠加
+    }
+  }
+  return { bonus, preferred: false };
+}
+
+/** 需要剥离的追踪/营销参数（前缀匹配 + 精确匹配） */
+const TRACKING_QUERY_PARAMS: string[] = [
+  // Google / Facebook / Instagram 追踪
+  'gclid', 'fbclid', 'igshid', 'dclid', 'msclkid',
+  // Mailchimp / HubSpot / Marketo
+  'mc_cid', 'mc_eid', '_hsenc', '_hsmi', 'mkt_tok',
+  // 通用引用追踪
+  'ref', 'ref_src', 'ref_url', 'referer', 'referrer',
+  // 中国站点常见追踪
+  'spm', 'scm', 'pvid', 'utm_source', 'campaign_id',
+];
+
+/**
+ * URL 规范化去重：
+ * - 剥离 fragment
+ * - 剥离追踪参数（utm_* 前缀 + 已知追踪参数）
+ * - 统一协议、主机为小写
+ * - 去除默认端口（http:80 / https:443）
+ * - 去除路径尾斜杠（根路径 / 保留）
+ */
 function canonicalizeUrl(url: string): string {
   try {
     const parsed = new URL(url);
     parsed.hash = '';
-    return parsed.toString().toLowerCase();
+
+    // 剥离追踪参数：utm_ 前缀 + 精确匹配清单
+    const keysToDelete: string[] = [];
+    parsed.searchParams.forEach((_v, k) => {
+      const lk = k.toLowerCase();
+      if (lk.startsWith('utm_') || TRACKING_QUERY_PARAMS.includes(lk)) {
+        keysToDelete.push(k);
+      }
+    });
+    keysToDelete.forEach((k) => parsed.searchParams.delete(k));
+
+    // 去默认端口
+    const isDefaultPort =
+      (parsed.protocol === 'http:' && parsed.port === '80') ||
+      (parsed.protocol === 'https:' && parsed.port === '443');
+    if (isDefaultPort) parsed.port = '';
+
+    // 去尾斜杠（仅非根路径）
+    if (parsed.pathname.length > 1 && parsed.pathname.endsWith('/')) {
+      parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+    }
+
+    // 协议 + 主机小写，路径/查询保持原样（查询参数大小写有语义）
+    parsed.protocol = parsed.protocol.toLowerCase();
+    parsed.hostname = parsed.hostname.toLowerCase();
+
+    return parsed.toString();
   } catch {
     return url;
   }

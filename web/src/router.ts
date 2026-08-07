@@ -28,6 +28,11 @@ export const router = createRouter({
           name: 'key-detail',
           component: () => import('./views/KeyDetail.vue'),
         },
+        {
+          path: 'llm-providers',
+          name: 'llm-providers',
+          component: () => import('./views/LlmProviders.vue'),
+        },
       ],
     },
   ],

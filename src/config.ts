@@ -65,7 +65,8 @@ const schema = z.object({
   HTTPS_PROXY: z.string().optional(),
   NO_PROXY: z.string().optional(),
   // ---- 浏览器渲染获取（web_fetch_render）----
-  // Browserless v2 Playwright WS 端点（含 /chromium/playwright 路径）；未部署时设 BROWSER_FETCH_ENABLED=false 关闭工具
+  // Browserless v2 Playwright WS 端点（裸地址，不含 query params；stealth/launch 由代码构建）
+  // 未部署时设 BROWSER_FETCH_ENABLED=false 关闭工具
   BROWSER_FETCH_URL: z.string().default('ws://localhost:9100/chromium/playwright'),
   // 渲染超时（毫秒）；给慢站点留足时间（含跨境网络延迟），须 < browserless 会话 TIMEOUT
   BROWSER_FETCH_TIMEOUT: z.coerce.number().int().positive().default(180_000),
@@ -74,6 +75,14 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v !== 'false'),
+  // Chromium 页面请求代理（通过 launch args --proxy-server 传入）。
+  // 不配则直连。国内服务器访问境外站点时需设为与 HTTP_PROXY 一致的地址。
+  BROWSER_FETCH_PROXY: z.string().optional(),
+  // ---- AI 增强（web_fetch_answer / web_search_answer）----
+  // LLM 调用超时（毫秒）；给慢模型（如 o1 / 深度思考）留足时间
+  LLM_TIMEOUT: z.coerce.number().int().positive().default(60_000),
+  // QA 回答最大 token 数
+  LLM_MAX_TOKENS: z.coerce.number().int().positive().default(2000),
   FETCH_TIMEOUT: z.coerce.number().int().positive().default(30_000),
   MAX_RESPONSE_SIZE: z.coerce.number().int().positive().default(5_242_880),
   MAX_REDIRECTS: z.coerce.number().int().positive().default(5),

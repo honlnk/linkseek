@@ -74,15 +74,15 @@ services:
     container_name: linkseek-searxng
     restart: unless-stopped
     volumes:
-      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./searxng/settings.yml:/etc/searxng/settings.template.yml:ro
+      - ./searxng/docker-entrypoint.sh:/docker-entrypoint.sh:ro
       - searxng-data:/etc/searxng/data
+    entrypoint: /bin/sh /docker-entrypoint.sh
     environment:
       - SEARXNG_BASE_URL=http://linkseek-searxng:8080/
-      # 服务器在国内，SearXNG 需通过宿主机 mihomo 代理访问 Google/DuckDuckGo 等
-      # 依赖 mihomo 的 allow-lan: true（端口监听 0.0.0.0:7890）
-      - HTTP_PROXY=http://172.17.0.1:7890
-      - HTTPS_PROXY=http://172.17.0.1:7890
-      - NO_PROXY=localhost,127.0.0.1,linkseek-app,linkseek-mysql,linkseek-searxng,linkseek-gateway
+      # SearXNG 访问境外搜索引擎的代理地址（entrypoint 脚本注入到 settings.yml）
+      # 生产：通过宿主机 mihomo 代理（需 allow-lan: true，端口 7890）
+      - SEARXNG_PROXY=http://172.17.0.1:7890
     extra_hosts:
       # 确保 docker0 IP 在容器内可解析（部分场景需要）
       - "host.docker.internal:172.17.0.1"
@@ -114,6 +114,8 @@ services:
       retries: 5
     # Browserless + Chromium 实例池，512m 会 OOM；1g 为官方推荐下限
     mem_limit: 1g
+    # Chromium 默认 /dev/shm 仅 64MB，渲染重页面易崩溃；设 2g 避免共享内存不足
+    shm_size: 2g
     networks:
       - linkseek-net
     # 不映射端口 —— 仅容器间访问

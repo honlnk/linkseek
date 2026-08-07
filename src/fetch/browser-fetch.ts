@@ -6,6 +6,40 @@ import { htmlToMarkdown } from './html-to-md.js';
 import { FetchError, truncate } from './http-fetch.js';
 
 /**
+ * 真实 Chrome UA（与 http-fetch.ts 的 COMMON_HEADERS 保持一致，降低 WAF 识别概率）。
+ */
+const BROWSER_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+/**
+ * 构建 Browserless WS 端点 URL，附加 stealth + launch 参数。
+ *
+ * - `?stealth=true`：启用 puppeteer-extra-stealth 插件（补丁 navigator.webdriver 等）
+ * - `?launch=<base64>`：传 Chromium 启动参数
+ *   - `--disable-dev-shm-usage`：避免容器 /dev/shm 默认 64MB 导致崩溃
+ *   - `--disable-blink-features=AutomationControlled`：隐藏自动化特征
+ *   - `--proxy-server=<url>`（可选）：Chromium 页面请求走代理
+ */
+function buildWsEndpoint(baseUrl: string): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set('stealth', 'true');
+
+  const args = [
+    '--disable-dev-shm-usage',
+    '--disable-blink-features=AutomationControlled',
+  ];
+  if (config.BROWSER_FETCH_PROXY) {
+    args.push(`--proxy-server=${config.BROWSER_FETCH_PROXY}`);
+  }
+
+  // Browserless 的 launch 参数是 base64 编码的 JSON
+  const launchConfig = JSON.stringify({ args });
+  url.searchParams.set('launch', Buffer.from(launchConfig).toString('base64'));
+
+  return url.toString();
+}
+
+/**
  * 浏览器渲染获取适配器。
  *
  * 通过 Playwright connect() 远程连接独立的 Browserless v2 容器（托管 Chromium 实例池），
@@ -20,33 +54,44 @@ import { FetchError, truncate } from './http-fetch.js';
  * - SSRF 防护简化为主服务侧 validateUrl 静态校验（Browserless 在内部网络）
  */
 export class BrowserFetchProvider {
-  constructor(
-    private readonly endpoint: string = config.BROWSER_FETCH_URL,
-    private readonly timeout: number = config.BROWSER_FETCH_TIMEOUT,
-  ) {}
+  private readonly wsEndpoint: string;
+
+  constructor(baseUrl: string = config.BROWSER_FETCH_URL, private readonly timeout: number = config.BROWSER_FETCH_TIMEOUT) {
+    this.wsEndpoint = buildWsEndpoint(baseUrl);
+  }
 
   /**
    * 渲染指定 URL 并返回 Markdown 正文。
    *
-   * 流程：URL 静态校验 → WS 连接 Browserless → domcontentloaded + 等主体 → HTML→Markdown → 截断
+   * 流程：URL 静态校验 → WS 连接 Browserless（stealth + launch args）→
+   *       newContext（UA + viewport + locale）→ domcontentloaded + 等主体 →
+   *       HTML→Markdown → 截断
    */
   async renderAsMarkdown(rawUrl: string): Promise<string> {
     // 第一道防线：静态 SSRF 校验（拦截字面量内网 IP、协议、userinfo）
     const safeUrl = validateUrl(rawUrl);
     const target = safeUrl.href;
 
-    logger.debug({ endpoint: this.endpoint, url: target, timeout: this.timeout }, 'browser-fetch 渲染请求');
+    logger.debug({ endpoint: this.wsEndpoint, url: target, timeout: this.timeout }, 'browser-fetch 渲染请求');
 
-    // 连接 Browserless v2 的 Playwright WS 端点
+    // 连接 Browserless v2 的 Playwright WS 端点（已附加 stealth + launch 参数）
     // browserless 开源版的 WS 路由是 /chromium/playwright（非根路径，非 CDP 根端点）
-    const browser = await chromium.connect({ wsEndpoint: this.endpoint }).catch((err: unknown) => {
+    const browser = await chromium.connect({ wsEndpoint: this.wsEndpoint }).catch((err: unknown) => {
       throw new FetchError(
         `Browserless 不可达: ${err instanceof Error ? err.message : String(err)}`,
         'network',
       );
     });
 
-    const context = await browser.newContext();
+    // newContext 设真实浏览器指纹（stealth 插件处理 navigator 层补丁，这里补 context 层）
+    const context = await browser.newContext({
+      userAgent: BROWSER_UA,
+      viewport: { width: 1920, height: 1080 },
+      locale: 'zh-CN',
+      extraHTTPHeaders: {
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      },
+    });
     const page = await context.newPage();
     try {
       // domcontentloaded：DOM 解析完成即返回，不苦等 networkidle（那是 502 首因）

@@ -38,10 +38,14 @@ const DashboardIcon = svgIcon(
 const KeyIcon = svgIcon(
   'M21 10h-8.35A5.99 5.99 0 0 0 7 6a6 6 0 1 0 5.65 8H13l2 2 2-2 2 2 2-2v-2l2-1.5V10zM7 15a2 2 0 1 1 0-4 2 2 0 0 1 0 4z',
 );
+const AiIcon = svgIcon(
+  'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
+);
 
 const menuOptions: MenuOption[] = [
   { label: '请求总览', key: 'dashboard', icon: () => h(DashboardIcon) },
   { label: 'Key 管理', key: 'keys', icon: () => h(KeyIcon) },
+  { label: 'AI 模型', key: 'llm-providers', icon: () => h(AiIcon) },
 ];
 
 function handleMenu(key: string) {
