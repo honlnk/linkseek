@@ -54,6 +54,13 @@ export const webSearchAnswerInput = {
     .string()
     .optional()
     .describe('指定搜索引擎（逗号分隔）：google、bing、ddg、wikipedia 等。不传则自动选择。'),
+  preferred_sites: z
+    .array(z.string().min(1))
+    .max(10)
+    .optional()
+    .describe(
+      '优先展示并抓取的域名列表，如 ["github.com", "react.dev"]。传域名而非完整 URL；匹配域名及其子域名的结果会排在前面。',
+    ),
 };
 
 export const webSearchAnswerDescription = `搜索关键词，抓取多个结果页面，用 AI 综合回答你的问题。
@@ -80,6 +87,7 @@ export function registerWebSearchAnswer(server: McpServer): void {
       language,
       categories,
       engines,
+      preferred_sites,
     }) => {
       // 1. 解析 Provider
       const provider = await resolveProvider(model);
@@ -102,6 +110,7 @@ export function registerWebSearchAnswer(server: McpServer): void {
           language,
           categories,
           engines,
+          preferredSites: preferred_sites,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

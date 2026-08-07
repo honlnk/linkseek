@@ -44,6 +44,13 @@ export const searchAndFetchInput = {
     .describe(
       '指定搜索引擎（逗号分隔）：google、bing、ddg、wikipedia 等。不传则自动选择。',
     ),
+  preferred_sites: z
+    .array(z.string().min(1))
+    .max(10)
+    .optional()
+    .describe(
+      '优先展示并抓取的域名列表，如 ["github.com", "react.dev"]。传域名而非完整 URL；匹配域名及其子域名的结果会排在前面。',
+    ),
 };
 
 export const searchAndFetchDescription = `搜索关键词并自动获取前几个结果的页面正文，一次调用完成「搜索 + 获取」。
@@ -80,7 +87,7 @@ export function registerSearchAndFetch(server: McpServer): void {
   server.registerTool(
     'web_search_and_fetch',
     { description: searchAndFetchDescription, inputSchema: searchAndFetchInput },
-    async ({ query, fetchCount = 3, searchMaxResults = 10, timeRange, language, categories, engines }) => {
+    async ({ query, fetchCount = 3, searchMaxResults = 10, timeRange, language, categories, engines, preferred_sites }) => {
       // 1. 搜索
       let results;
       try {
@@ -90,6 +97,7 @@ export function registerSearchAndFetch(server: McpServer): void {
           language,
           categories,
           engines,
+          preferredSites: preferred_sites,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

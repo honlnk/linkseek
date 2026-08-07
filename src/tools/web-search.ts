@@ -32,6 +32,13 @@ export const webSearchInput = {
     .describe(
       '指定搜索引擎（逗号分隔的引擎名或 shortcut）。常用：google、bing、duckduckgo（shortcut: ddg）、wikipedia、brave。不传则由 SearXNG 自动选择。仅在需要特定来源时使用，一般优先用 categories。',
     ),
+  preferred_sites: z
+    .array(z.string().min(1))
+    .max(10)
+    .optional()
+    .describe(
+      '优先展示的域名列表，如 ["github.com", "react.dev"]。传域名而非完整 URL；匹配域名及其子域名的结果会排在前面。指定网站不在搜索结果中时不会凭空生成结果。',
+    ),
 };
 
 export const webSearchDescription = `联网搜索，返回关键词匹配的网页列表。
@@ -39,19 +46,21 @@ export const webSearchDescription = `联网搜索，返回关键词匹配的网�
 - 基于自托管 SearXNG 元搜索引擎，聚合 200+ 搜索源
 - 返回结构化结果：每条含标题、URL、摘要
 - 支持按分类（categories）、引擎（engines）、时间范围、语言过滤
-- 结果按相关性评分排序，自动去重
+- 结果按相关性评分和来源权威性排序，自动去重
+- 可用 preferred_sites 指定优先域名，适合限定优先参考的官网、GitHub 仓库或文档站
 
 如何选择参数：
 - 技术类问题 → categories=it
 - 学术论文 → categories=science
 - 英文内容 → language=en
+- 需要特定官网或站点优先 → preferred_sites=["example.com"]
 - 需要特定引擎结果 → engines=google,bing`;
 
 export function registerWebSearch(server: McpServer): void {
   server.registerTool(
     'web_search',
     { description: webSearchDescription, inputSchema: webSearchInput },
-    async ({ query, maxResults, timeRange, language, categories, engines }) => {
+    async ({ query, maxResults, timeRange, language, categories, engines, preferred_sites }) => {
       try {
         const results = await searchProvider.search(query, {
           maxResults,
@@ -59,6 +68,7 @@ export function registerWebSearch(server: McpServer): void {
           language,
           categories,
           engines,
+          preferredSites: preferred_sites,
         });
 
         if (results.length === 0) {

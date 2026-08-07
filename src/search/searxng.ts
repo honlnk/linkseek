@@ -88,13 +88,18 @@ export class SearXngProvider implements SearchProvider {
       );
     }
 
-    // 按有效 score 降序排序（原始 score + 来源权威性 bonus）
+    // 按有效 score 降序排序（原始 score + 来源权威性 bonus + 用户优先域名提权）
+    const preferredSites = normalizePreferredSites(options.preferredSites);
     const scored = raw.map((r) => {
-      const boost = getAuthorityBoost(r.url);
+      const boost = getAuthorityBoost(r.url, preferredSites);
       const effectiveScore = (r.score ?? 0) + boost.bonus;
       return { result: r, effectiveScore, boost };
     });
-    scored.sort((a, b) => b.effectiveScore - a.effectiveScore);
+    scored.sort((a, b) => {
+      // 用户显式指定的站点永远排在其他来源之前；组内仍按相关性和静态权威性排序
+      if (a.boost.preferred !== b.boost.preferred) return a.boost.preferred ? -1 : 1;
+      return b.effectiveScore - a.effectiveScore;
+    });
     const sorted = scored.map((s) => s.result);
 
     // 转换 + 过滤无效项 + URL 规范化去重
@@ -182,17 +187,58 @@ const AUTHORITY_RULES: { pattern: RegExp; bonus: number }[] = [
 
 interface AuthorityBoost {
   bonus: number;
+  preferred: boolean;
 }
 
-/** 计算 URL 的权威性加权 bonus（0 = 无提权） */
-function getAuthorityBoost(url: string | undefined): AuthorityBoost {
-  if (!url) return { bonus: 0 };
+/** 用户优先域名提权的 bonus 值（高于所有固定权威规则） */
+const PREFERRED_SITE_BONUS = 10;
+
+/**
+ * 归一化用户传入的优先站点。
+ * schema 要求传域名，但这里也宽容完整 URL、路径和端口，避免 AI 偶发格式偏差。
+ */
+function normalizePreferredSites(sites: string[] | undefined): string[] {
+  const normalized = new Set<string>();
+  for (const value of sites ?? []) {
+    const raw = value.trim().toLowerCase();
+    if (!raw) continue;
+    try {
+      const hostname = new URL(raw.includes('://') ? raw : `https://${raw}`).hostname;
+      if (hostname) normalized.add(hostname);
+    } catch {
+      // 无法解析的输入不参与匹配，避免模糊匹配导致误提权
+    }
+  }
+  return [...normalized];
+}
+
+/**
+ * 计算 URL 的权威性加权 bonus（0 = 无提权）。
+ *
+ * 两级提权：
+ * 1. 用户显式指定的 preferredSites（最高优先，+10）
+ * 2. 静态权威规则（GitHub/Wikipedia/官方文档等，+1~+5）
+ * 两者不叠加，取最高 bonus。
+ */
+function getAuthorityBoost(url: string | undefined, preferredSites: string[] = []): AuthorityBoost {
+  if (!url) return { bonus: 0, preferred: false };
   let hostname: string;
   try {
     hostname = new URL(url).hostname.toLowerCase();
   } catch {
-    return { bonus: 0 };
+    return { bonus: 0, preferred: false };
   }
+
+  // 用户优先域名（精确匹配或子域名匹配）
+  if (preferredSites.length > 0) {
+    for (const site of preferredSites) {
+      if (hostname === site || hostname.endsWith(`.${site}`)) {
+        return { bonus: PREFERRED_SITE_BONUS, preferred: true };
+      }
+    }
+  }
+
+  // 静态权威规则
   const fullForMatch = hostname + '/'; // 补斜杠让正则 ^xxx/ 能匹配根路径
   let bonus = 0;
   for (const rule of AUTHORITY_RULES) {
@@ -200,7 +246,7 @@ function getAuthorityBoost(url: string | undefined): AuthorityBoost {
       bonus = Math.max(bonus, rule.bonus); // 多条命中取最高 bonus，不叠加
     }
   }
-  return { bonus };
+  return { bonus, preferred: false };
 }
 
 /** 需要剥离的追踪/营销参数（前缀匹配 + 精确匹配） */

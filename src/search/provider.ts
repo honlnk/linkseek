@@ -14,6 +14,8 @@ export interface SearchOptions {
   categories?: string;
   /** 指定引擎（逗号分隔的引擎名或 shortcut），如 google,bing / ddg。不传则用 SearXNG 默认 */
   engines?: string;
+  /** 优先展示的域名列表，命中域名的结果会被提权到最前。传域名而非完整 URL */
+  preferredSites?: string[];
 }
 
 export interface SearchResult {
