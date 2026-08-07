@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { searchProvider } from '../search/searxng.js';
 import { timeRangeValues } from '../search/searxng.js';
+import { buildEmptyHint } from '../search/empty-hint.js';
 
 export const webSearchInput = {
   query: z.string().min(1).describe('搜索关键词'),
@@ -72,8 +73,9 @@ export function registerWebSearch(server: McpServer): void {
         });
 
         if (results.length === 0) {
+          const hint = buildEmptyHint(categories, engines);
           return {
-            content: [{ type: 'text', text: `未找到与「${query}」相关的结果。` }],
+            content: [{ type: 'text', text: `未找到与「${query}」相关的结果。${hint}` }],
           };
         }
 

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { searchProvider } from '../search/searxng.js';
 import { timeRangeValues } from '../search/searxng.js';
+import { buildEmptyHint } from '../search/empty-hint.js';
 import { fetchPageAsMarkdown, FetchError } from '../fetch/http-fetch.js';
 import { isLowQualityContent } from '../fetch/content-quality.js';
 import { browserFetchProvider } from '../fetch/browser-fetch.js';
@@ -49,7 +50,9 @@ export const webSearchAnswerInput = {
   categories: z
     .string()
     .optional()
-    .describe('搜索分类（逗号分隔）：general、it、science、news、images 等。不传则用 general。'),
+    .describe(
+      '搜索分类（逗号分隔），按内容类型缩小范围。常用值：general（默认）、it（技术/开发）、science（学术）、news（新闻）、images（图片）、videos（视频）、files（文件下载）。不传则用 general。',
+    ),
   engines: z
     .string()
     .optional()
@@ -122,7 +125,7 @@ export function registerWebSearchAnswer(server: McpServer): void {
 
       if (results.length === 0) {
         return {
-          content: [{ type: 'text', text: `未找到与「${query}」相关的结果。` }],
+          content: [{ type: 'text', text: `未找到与「${query}」相关的结果。${buildEmptyHint(categories, engines)}` }],
         };
       }
 
@@ -158,19 +161,39 @@ export function registerWebSearchAnswer(server: McpServer): void {
         }),
       );
 
-      // 4. 拼装 context 给 LLM
-      const contextParts: string[] = [];
-      const sourceList: string[] = [];
+      // 4. 汇总每个 target 的抓取结果，统一编号（连续不跳号）
+      //    无论抓取成功与否都纳入来源列表，避免模型引用的 [n] 与最终来源列表错位。
+      interface SourceRecord {
+        id: number;
+        title: string;
+        url: string;
+        snippet: string;
+        content: string;
+        fetchOk: boolean;
+      }
+      const sources: SourceRecord[] = [];
       for (let i = 0; i < targets.length; i++) {
+        const r = targets[i];
         const fr = fetchResults[i];
-        if (fr.status === 'fulfilled') {
-          const { title, url, snippet, content } = fr.value;
-          sourceList.push(`[${i + 1}] ${title} (${url})`);
-          if (content && content.trim().length > 0) {
-            contextParts.push(`## 来源 ${i + 1}: ${title}\nURL: ${url}\n摘要: ${snippet}\n\n${content.slice(0, 4000)}`);
-          } else {
-            contextParts.push(`## 来源 ${i + 1}: ${title}\nURL: ${url}\n摘要: ${snippet}\n\n（正文获取失败，仅有摘要）`);
-          }
+        const value = fr.status === 'fulfilled' ? fr.value : null;
+        sources.push({
+          id: i + 1,
+          title: r.title,
+          url: r.url,
+          snippet: r.snippet,
+          content: value?.content ?? '',
+          fetchOk: !!(value && value.content && value.content.trim().length > 0),
+        });
+      }
+
+      // 5. 拼装 context 给 LLM（只放有正文的来源；仅有摘要的也保留，让模型知道摘要存在）
+      const contextParts: string[] = [];
+      for (const s of sources) {
+        const head = `## 来源 ${s.id}: ${s.title}\nURL: ${s.url}\n摘要: ${s.snippet}`;
+        if (s.fetchOk) {
+          contextParts.push(`${head}\n\n${s.content.slice(0, 4000)}`);
+        } else {
+          contextParts.push(`${head}\n\n（正文获取失败，仅有上述摘要）`);
         }
       }
 
@@ -182,7 +205,9 @@ export function registerWebSearchAnswer(server: McpServer): void {
             '你是一个搜索问答助手。根据以下从网络搜索到的多个页面内容，准确回答用户的问题。' +
             '回答要综合多个来源的信息，简洁、准确、信息密度高。' +
             '在关键信息后标注来源编号（如 [1] [2]）。如果内容无法回答问题，请明确说明。' +
-            '回答使用中文（除非用户用英文提问）。',
+            '回答使用中文（除非用户用英文提问）。\n\n' +
+            '重要：只输出回答正文，不要在回答末尾生成「来源」「参考资料」「Sources」等独立列表，也不要重复列出 URL；' +
+            '来源编号对应的完整 URL 列表会由系统统一追加。',
         },
         {
           role: 'user',
@@ -190,7 +215,7 @@ export function registerWebSearchAnswer(server: McpServer): void {
         },
       ];
 
-      // 5. 调用 LLM
+      // 6. 调用 LLM
       try {
         const conn = toConnectionConfig(provider);
         const adapter = getAdapter(provider.protocol);
@@ -207,8 +232,14 @@ export function registerWebSearchAnswer(server: McpServer): void {
           'web_search_answer 完成',
         );
 
-        // 附上来源列表
-        const text = `${result.content}\n\n---\n**来源：**\n${sourceList.join('\n')}`;
+        // 7. 模型偶尔会忽略指令自行追加来源章节，做保守清理：仅移除回答末尾的来源标题块
+        const cleanedAnswer = stripTrailingSourceSection(result.content);
+        // 工具统一追加来源列表（与 context 编号一致，连续不跳号）
+        const sourceList = sources.map((s) => {
+          const mark = s.fetchOk ? '' : '（正文获取失败，仅有摘要）';
+          return `[${s.id}] ${s.title} (${s.url})${mark ? ' ' + mark : ''}`;
+        });
+        const text = `${cleanedAnswer}\n\n---\n**来源：**\n${sourceList.join('\n')}`;
         return { content: [{ type: 'text', text }] };
       } catch (err) {
         const reason = err instanceof AiError
@@ -222,4 +253,67 @@ export function registerWebSearchAnswer(server: McpServer): void {
       }
     },
   );
+}
+
+/**
+ * 匹配来源/参考资料章节标题的正则。
+ * 支持：中文「来源 / 参考资料 / 参考来源 / 引用」、英文「Sources / References / Citations」。
+ * 行首可有 1-3 个 # 或 * / -（Markdown 标题或强调），标题前后可有空格和冒号。
+ */
+const SOURCE_SECTION_TITLES =
+  /^\s{0,3}(?:#{1,3}\s*|[*-]{1,2}\s*)?(来源|参考资料|参考来源|引用|sources|references|citations)\s*:?\s*\**\s*$/i;
+
+/**
+ * 判断一行是否像「来源条目」：以编号或链接开头。
+ * 命中 `[1] ...`、`1. ...`、`- [1] ...`、纯 URL 行、Markdown 链接 `[text](url)` 行。
+ */
+function looksLikeSourceLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return true; // 来源块内部的空行也算属于该块
+  // [1] / [n] 引用编号开头
+  if (/^\[?\d+\]?[.)\s]/.test(trimmed)) return true;
+  // Markdown 链接或裸 URL
+  if (/^\[.+]\(https?:\/\//i.test(trimmed) || /^https?:\/\//i.test(trimmed)) return true;
+  // 列表项 `- xxx (url)` 这类
+  if (/^[-*]\s+.*https?:\/\//i.test(trimmed)) return true;
+  return false;
+}
+
+/**
+ * 保守清理：移除模型在回答末尾自行生成的「来源 / 参考资料 / Sources」章节。
+ *
+ * 设计原则：
+ * - 只处理回答末尾出现的、标题明确的来源区块
+ * - 不删除正文中的 [n] 引用
+ * - 不删除正文里普通的链接或段落
+ * - 来源区块判定为「标题行 + 连续若干行来源条目（允许空行）」
+ * - 若该区块下还有正文内容，则不视为纯来源章节，不删除
+ *
+ * 这样即便模型偶尔忽略 prompt 指令自行追加来源，也不会和工具追加的列表重复。
+ */
+function stripTrailingSourceSection(answer: string): string {
+  const lines = answer.split('\n');
+  // 从后向前找最后一个来源标题
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (SOURCE_SECTION_TITLES.test(lines[i])) {
+      // 检查标题之后是否全是来源条目/空行（直到文件末尾）
+      let allSourceLines = true;
+      for (let j = i + 1; j < lines.length; j++) {
+        const t = lines[j].trim();
+        if (t === '') continue;
+        if (!looksLikeSourceLine(lines[j])) {
+          allSourceLines = false;
+          break;
+        }
+      }
+      if (allSourceLines) {
+        // 删除从标题开始到末尾的内容
+        // 同时去掉标题前可能存在的分隔符（---）和多余空行
+        let cutAt = i;
+        while (cutAt > 0 && /^\s{0,3}---+\s*$/.test(lines[cutAt - 1])) cutAt--;
+        return lines.slice(0, cutAt).join('\n').replace(/\s+$/, '');
+      }
+    }
+  }
+  return answer;
 }

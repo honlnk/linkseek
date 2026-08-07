@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { searchProvider } from '../search/searxng.js';
 import { timeRangeValues } from '../search/searxng.js';
+import { buildEmptyHint } from '../search/empty-hint.js';
 import { fetchPageAsMarkdown, FetchError } from '../fetch/http-fetch.js';
 import { isLowQualityContent } from '../fetch/content-quality.js';
 import { browserFetchProvider } from '../fetch/browser-fetch.js';
@@ -36,7 +37,7 @@ export const searchAndFetchInput = {
     .string()
     .optional()
     .describe(
-      '搜索分类（逗号分隔）：general、it、science、news、images 等。不传则用 general。',
+      '搜索分类（逗号分隔），按内容类型缩小范围。常用值：general（默认）、it（技术/开发）、science（学术）、news（新闻）、images（图片）、videos（视频）、files（文件下载）。不传则用 general。',
     ),
   engines: z
     .string()
@@ -109,7 +110,7 @@ export function registerSearchAndFetch(server: McpServer): void {
 
       if (results.length === 0) {
         return {
-          content: [{ type: 'text', text: `未找到与「${query}」相关的结果。` }],
+          content: [{ type: 'text', text: `未找到与「${query}」相关的结果。${buildEmptyHint(categories, engines)}` }],
         };
       }
 

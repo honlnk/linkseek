@@ -64,7 +64,7 @@ export class SearXngProvider implements SearchProvider {
       headers: {
         Accept: 'application/json',
         // Accept-Language 配合 effectiveLang，让 SearXNG 的 default_lang: auto 判断更准
-        AcceptLanguage: toAcceptLanguage(effectiveLang),
+        'Accept-Language': toAcceptLanguage(effectiveLang),
       },
       dispatcher: internalAgent, // SearXNG 是可信内网服务，不走代理也不做 SSRF 拦截
       signal: AbortSignal.timeout(15_000),
@@ -127,18 +127,20 @@ export class SearXngProvider implements SearchProvider {
 
 /**
  * 按 query 内容启发式判断语言。
- * - 含中日韩字符 → zh-CN（CJK 引擎覆盖好，中文结果质量高）
- * - 纯拉丁字母/数字/符号 → en（避免被中文引擎带偏）
+ * - 只含 CJK 字符 → zh-CN（CJK 引擎覆盖好，中文结果质量高）
+ * - 只含拉丁字母/数字/符号 → en（避免被中文引擎带偏）
+ * - 中文与拉丁字母同时出现（如 "Claude Code 使用方法"）→ all
+ *   混合查询强制单一语言会丢失另一半有效结果，交给 SearXNG 跨语言召回更稳
  * - 无法判断（纯数字/符号）→ ''（交给 SearXNG auto）
  *
- * 注意：少量中文站点转载英文技术词时会混入 CJK 字符，此时判 zh-CN 是合理的
- * （用户大概率想看中文资料）。纯英文 query 走 en 是核心优化点。
+ * 用户显式传入 language 时本函数不会被调用（见 search() 中的 effectiveLang 推导）。
  */
 function detectLanguage(query: string): string {
-  // CJK 统一表意 + 平假名/片假名 + 韩文音节
-  if (/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(query)) return 'zh-CN';
-  // 有拉丁字母（技术关键词如 "Claude Code"）→ en
-  if (/[a-zA-Z]/.test(query)) return 'en';
+  const hasCJK = /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(query);
+  const hasLatin = /[a-zA-Z]/.test(query);
+  if (hasCJK && hasLatin) return 'all';
+  if (hasCJK) return 'zh-CN';
+  if (hasLatin) return 'en';
   return '';
 }
 
@@ -149,6 +151,9 @@ function toAcceptLanguage(lang: string): string {
       return 'en-US,en;q=0.9';
     case 'zh-CN':
       return 'zh-CN,zh;q=0.9';
+    case 'all':
+      // 混合查询：中英并重，让 SearXNG 跨语言召回
+      return 'zh-CN,zh;q=0.8,en-US,en;q=0.8';
     default:
       // 不确定时给一个中英混合的偏好（英文优先，兼顾中文）
       return 'en-US,en;q=0.8,zh-CN;q=0.6';
