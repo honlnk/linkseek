@@ -12,6 +12,9 @@ import {
   NDescriptionsItem,
   NTag,
 } from 'naive-ui';
+import type { EChartsOption } from 'echarts';
+import EChart from '../components/EChart.vue';
+import { toolColor } from '../shared.js';
 import { api, type ApiKeyItem, type KeyStats } from '../api.js';
 
 const route = useRoute();
@@ -20,24 +23,6 @@ const router = useRouter();
 const keyDetail = ref<ApiKeyItem | null>(null);
 const stats = ref<KeyStats | null>(null);
 const loading = ref(true);
-
-const maxTrendCount = computed(() => {
-  if (!stats.value) return 1;
-  return Math.max(
-    1,
-    ...stats.value.trend.map((t) => Object.values(t.counts).reduce((a, b) => a + b, 0)),
-  );
-});
-
-const toolColors: Record<string, string> = {
-  web_search: '#2080f0',
-  web_fetch: '#18a058',
-  web_search_and_fetch: '#f0a020',
-  web_fetch_render: '#d03050',
-  list_models: '#8a2be2',
-  web_fetch_answer: '#36ad6a',
-  web_search_answer: '#ff9d3d',
-};
 
 async function load() {
   const id = route.params.id as string;
@@ -49,7 +34,7 @@ async function load() {
     ]);
     keyDetail.value = detail;
     stats.value = st;
-  } catch (err) {
+  } catch {
     keyDetail.value = null;
   } finally {
     loading.value = false;
@@ -57,6 +42,100 @@ async function load() {
 }
 
 watch(() => route.params.id, load, { immediate: true });
+
+// ---- 工具分布饼图 ----
+const pieOption = computed<EChartsOption>(() => {
+  const raw = stats.value?.byTool ?? [];
+  const total = raw.reduce((a, b) => a + b.count, 0);
+  const data = raw.map((t) => ({
+    name: t.tool,
+    value: t.count,
+    itemStyle: { color: toolColor(t.tool) },
+    label: total > 0 && t.count / total >= 0.08 ? { show: true, formatter: '{b}', fontSize: 12 } : { show: false },
+  }));
+
+  return {
+    tooltip: {
+      trigger: 'item',
+      formatter: (p: unknown) => {
+        const param = p as { name: string; value: number; percent: number };
+        return `${param.name}<br/>次数：${param.value}<br/>占比：${param.percent}%`;
+      },
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: ['42%', '70%'],
+        center: ['50%', '50%'],
+        avoidLabelOverlap: true,
+        labelLine: { show: true, length: 8, length2: 8 },
+        emphasis: {
+          label: { show: true, fontWeight: 'bold', fontSize: 13 },
+          itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.15)' },
+        },
+        labelLayout: { hideOverlap: true },
+        data,
+      },
+    ],
+    graphic: total === 0
+      ? { type: 'text', left: 'center', top: 'middle', style: { text: '暂无数据', fontSize: 14, fill: '#999' } }
+      : undefined,
+  };
+});
+
+/** 右侧列表 */
+const toolList = computed(() => {
+  const items = stats.value?.byTool ?? [];
+  const total = items.reduce((a, b) => a + b.count, 0);
+  return items
+    .map((t) => ({
+      tool: t.tool,
+      count: t.count,
+      percent: total > 0 ? (t.count / total) * 100 : 0,
+      color: toolColor(t.tool),
+    }))
+    .sort((a, b) => b.count - a.count);
+});
+
+// ---- 请求趋势平滑折线图 ----
+const trendTools = computed(() => {
+  const set = new Set<string>();
+  for (const day of stats.value?.trend ?? []) {
+    for (const tool of Object.keys(day.counts)) set.add(tool);
+  }
+  return [...set];
+});
+
+const trendOption = computed<EChartsOption>(() => {
+  const trend = stats.value?.trend ?? [];
+  const dates = trend.map((d) => d.date.slice(5));
+  const pointCount = dates.length;
+
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, type: 'scroll', data: trendTools.value },
+    grid: { left: 40, right: 16, top: 36, bottom: 28, containLabel: true },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: dates,
+      axisLabel: { interval: pointCount > 7 ? 1 : 0, fontSize: 11 },
+    },
+    yAxis: { type: 'value', minInterval: 1, splitNumber: 4 },
+    series: trendTools.value.map((tool) => ({
+      name: tool,
+      type: 'line',
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 5,
+      showSymbol: pointCount <= 14,
+      itemStyle: { color: toolColor(tool) },
+      lineStyle: { width: 2 },
+      areaStyle: { opacity: 0.08 },
+      data: trend.map((d) => d.counts[tool] ?? 0),
+    })),
+  };
+});
 </script>
 
 <template>
@@ -90,45 +169,27 @@ watch(() => route.params.id, load, { immediate: true });
         </NDescriptions>
       </NCard>
 
-      <!-- 按工具分布 -->
+      <!-- 按工具分布：饼图 + 右侧列表 -->
       <NCard title="按工具分布">
-        <NSpace v-if="stats.byTool.length" vertical :size="8">
-          <div v-for="item in stats.byTool" :key="item.tool" class="tool-bar">
-            <span class="tool-name">{{ item.tool }}</span>
-            <div class="bar-track">
-              <div
-                class="bar-fill"
-                :style="{
-                  width: `${(item.count / stats.total) * 100}%`,
-                  background: toolColors[item.tool] ?? '#999',
-                }"
-              />
-            </div>
-            <span class="tool-count">{{ item.count }}</span>
+        <div v-if="toolList.length" class="pie-row">
+          <div class="pie-wrap">
+            <EChart :option="pieOption" height="280px" />
           </div>
-        </NSpace>
+          <div class="legend-list">
+            <div v-for="item in toolList" :key="item.tool" class="legend-item">
+              <span class="legend-dot" :style="{ background: item.color }"></span>
+              <span class="legend-name">{{ item.tool }}</span>
+              <span class="legend-count">{{ item.count }}</span>
+              <span class="legend-pct">{{ item.percent.toFixed(1) }}%</span>
+            </div>
+          </div>
+        </div>
         <NEmpty v-else description="暂无数据" />
       </NCard>
 
-      <!-- 近 14 天趋势 -->
+      <!-- 近 14 天趋势：平滑折线图 -->
       <NCard title="近 14 天请求趋势">
-        <div v-if="stats.trend.length" class="trend-chart">
-          <div v-for="day in stats.trend" :key="day.date" class="trend-col">
-            <div class="trend-bars">
-              <div
-                v-for="(count, tool) in day.counts"
-                :key="tool"
-                class="trend-bar"
-                :style="{
-                  height: `${(count / maxTrendCount) * 100}%`,
-                  background: toolColors[tool] ?? '#999',
-                }"
-                :title="`${tool}: ${count}`"
-              />
-            </div>
-            <span class="trend-date">{{ day.date.slice(5) }}</span>
-          </div>
-        </div>
+        <EChart v-if="trendTools.length" :option="trendOption" height="320px" />
         <NEmpty v-else description="暂无趋势数据" />
       </NCard>
     </NSpace>
@@ -136,63 +197,59 @@ watch(() => route.params.id, load, { immediate: true });
 </template>
 
 <style scoped>
-.tool-bar {
+.pie-row {
   display: flex;
+  gap: 24px;
   align-items: center;
-  gap: 12px;
 }
-.tool-name {
-  width: 180px;
-  font-size: 13px;
+.pie-wrap {
+  flex: 0 0 50%;
+  max-width: 50%;
 }
-.bar-track {
+.legend-list {
   flex: 1;
-  height: 24px;
-  background: #f0f0f0;
-  border-radius: 4px;
-  overflow: hidden;
-}
-.bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s;
-}
-.tool-count {
-  width: 60px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.trend-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  height: 200px;
-  overflow-x: auto;
-  padding-bottom: 24px;
-}
-.trend-col {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  min-width: 32px;
-  height: 100%;
+  gap: 10px;
 }
-.trend-bars {
-  flex: 1;
+.legend-item {
   display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  width: 100%;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
 }
-.trend-bar {
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 10px;
+}
+.legend-name {
   flex: 1;
-  min-width: 4px;
-  border-radius: 2px 2px 0 0;
-  min-height: 2px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.trend-date {
-  font-size: 11px;
+.legend-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.legend-pct {
+  width: 56px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
   color: #999;
-  margin-top: 4px;
+}
+@media (max-width: 720px) {
+  .pie-row {
+    flex-direction: column;
+  }
+  .pie-wrap {
+    flex: none;
+    max-width: 100%;
+    width: 100%;
+  }
 }
 </style>

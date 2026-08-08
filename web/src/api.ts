@@ -60,6 +60,16 @@ export interface KeyStats {
   trend: { date: string; counts: Record<string, number> }[];
 }
 
+export interface TopKeyItem {
+  keyId: string;
+  name: string;
+  count: number;
+}
+
+export interface TopKeysResp {
+  items: TopKeyItem[];
+}
+
 // ---- LLM Provider ----
 
 export type Protocol = 'openai' | 'openai-responses' | 'anthropic' | 'gemini';
