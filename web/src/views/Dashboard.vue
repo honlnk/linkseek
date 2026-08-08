@@ -38,6 +38,21 @@ const stats = ref<OverviewStats | null>(null);
 const topKeys = ref<TopKeysResp | null>(null);
 const loading = ref(true);
 
+/**
+ * 日均请求：选定时间窗口内的总请求 ÷ 天数。
+ * 分子用 trend 各桶 count 之和（仅统计选中范围），分母用 days（不随分桶粒度变化）。
+ * 避免旧实现把全历史 total 除以分桶数（小时桶时分母变成 24）的问题。
+ */
+const dailyAvg = computed(() => {
+  const trend = stats.value?.trend ?? [];
+  const rangeTotal = trend.reduce(
+    (sum, d) => sum + Object.values(d.counts).reduce((s, c) => s + c, 0),
+    0,
+  );
+  const d = days.value;
+  return d > 0 ? Math.round(rangeTotal / d) : 0;
+});
+
 async function load() {
   loading.value = true;
   try {
@@ -257,15 +272,21 @@ const topKeysOption = computed<EChartsOption>(() => {
         </NGridItem>
         <NGridItem span="4 m:2 l:1">
           <NCard>
-            <NStatistic label="Key 总数" :value="stats.totalKeys" />
+            <NStatistic label="Key 总数">
+              <template #default>
+                <span style="font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums;">
+                  {{ stats.totalKeys }}<span style="color: #999; font-weight: 400;"> / {{ stats.enabledKeys }}</span>
+                </span>
+              </template>
+              <template #suffix>
+                <span style="font-size: 12px; color: #999;">总数 / 已启用</span>
+              </template>
+            </NStatistic>
           </NCard>
         </NGridItem>
         <NGridItem span="4 m:2 l:1">
           <NCard>
-            <NStatistic
-              label="日均请求"
-              :value="stats.trend.length ? Math.round(stats.total / Math.max(stats.trend.length, 1)) : 0"
-            />
+            <NStatistic label="日均请求" :value="dailyAvg" />
           </NCard>
         </NGridItem>
       </NGrid>

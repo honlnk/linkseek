@@ -66,7 +66,8 @@ export function createStatsRouter(): Router {
     const days = Math.min(Number(req.query.days) || 7, 90);
     const bucket = req.query.bucket === 'hour' ? 'hour' : 'day' as const;
 
-    const [total, byTool, activeKeys, totalKeys] = await Promise.all([
+    // 全历史口径：总请求数、各工具分布、已启用 Key 数、Key 总数
+    const [total, byTool, enabledKeys, totalKeys] = await Promise.all([
       prisma.usageLog.count(),
       prisma.usageLog.groupBy({
         by: ['toolName'],
@@ -83,8 +84,11 @@ export function createStatsRouter(): Router {
 
     const logs = await prisma.usageLog.findMany({
       where: { createdAt: { gte: since } },
-      select: { toolName: true, createdAt: true },
+      select: { toolName: true, createdAt: true, keyId: true },
     });
+
+    // 活跃 Key：选定窗口内有过调用的不同 keyId 数量（随时间范围变化）
+    const activeKeys = new Set(logs.map((l) => l.keyId)).size;
 
     // 聚合成 { bucketKey: { tool: count } }
     const trend: Record<string, Record<string, number>> = {};
@@ -114,6 +118,7 @@ export function createStatsRouter(): Router {
     res.json({
       total,
       activeKeys,
+      enabledKeys,
       totalKeys,
       byTool: byTool.map((t) => ({ tool: t.toolName, count: t._count._all })),
       trend: Object.entries(trend)

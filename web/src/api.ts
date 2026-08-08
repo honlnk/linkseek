@@ -48,6 +48,7 @@ export interface ApiKeyItem {
 export interface OverviewStats {
   total: number;
   activeKeys: number;
+  enabledKeys: number;
   totalKeys: number;
   byTool: { tool: string; count: number }[];
   trend: { date: string; counts: Record<string, number> }[];
