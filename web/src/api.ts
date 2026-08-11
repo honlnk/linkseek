@@ -51,7 +51,16 @@ export interface OverviewStats {
   enabledKeys: number;
   totalKeys: number;
   byTool: { tool: string; count: number }[];
-  trend: { date: string; counts: Record<string, number> }[];
+  /** AI 用量与成本（全历史累计） */
+  ai: {
+    promptTokens: number;
+    completionTokens: number;
+    cacheHitTokens: number;
+    cost: number;
+  };
+  trend: { date: string; counts: Record<string, number>; cost: number }[];
+  /** 展示货币代码（用于金额符号） */
+  currency: string;
 }
 
 export interface KeyStats {
@@ -75,6 +84,16 @@ export interface TopKeysResp {
 
 export type Protocol = 'openai' | 'openai-responses' | 'anthropic' | 'gemini';
 
+/** Provider 价格配置（单一货币，不含 currency 字段） */
+export interface ProviderPricing {
+  inputPerMTok: number;
+  outputPerMTok: number;
+  cacheHitEnabled: boolean;
+  cacheHitPerMTok: number;
+  cacheWriteEnabled: boolean;
+  cacheWritePerMTok: number;
+}
+
 export interface LlmProviderItem {
   id: string;
   name: string;
@@ -85,6 +104,7 @@ export interface LlmProviderItem {
   models: string[];
   enabled: boolean;
   isDefault: boolean;
+  pricing: ProviderPricing;
   createdAt: string;
   updatedAt: string;
 }

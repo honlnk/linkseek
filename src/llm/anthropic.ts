@@ -11,15 +11,39 @@
  *
  * 精简自 duet/server/src/ai/providers/anthropic.ts。
  */
-import { trimBaseUrl, readErrorBody, AiError } from './shared.js';
-import type { ChatOpts, ChatResult, ProviderAdapter, ChatMessage } from './types.js';
+import { trimBaseUrl, readErrorBody, AiError, EMPTY_USAGE } from './shared.js';
+import type { ChatOpts, ChatResult, ProviderAdapter, ChatMessage, NormalizedUsage } from './types.js';
+
+/** Anthropic usage（input_tokens 含缓存读取/写入，需拆分） */
+interface AnthropicUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+}
 
 /** Anthropic 非流式响应 */
 interface AnthropicResponse {
   content?: Array<{ type: string; text?: string }>;
-  usage?: {
-    input_tokens?: number;
-    output_tokens?: number;
+  usage?: AnthropicUsage;
+}
+
+/**
+ * 归一化 usage：input→prompt、output→completion、cache_read→hit、cache_creation→write。
+ * Anthropic 的 input_tokens 含全部输入（含缓存命中与写入），故未命中需扣除：
+ *   miss = max(0, input - cacheRead - cacheCreate)
+ */
+function normalizeUsage(u: AnthropicUsage | undefined): NormalizedUsage {
+  if (!u) return { ...EMPTY_USAGE };
+  const input = u.input_tokens ?? 0;
+  const cacheRead = u.cache_read_input_tokens ?? 0;
+  const cacheCreate = u.cache_creation_input_tokens ?? 0;
+  return {
+    promptTokens: input,
+    completionTokens: u.output_tokens ?? 0,
+    cacheHitTokens: cacheRead,
+    cacheMissTokens: Math.max(0, input - cacheRead - cacheCreate),
+    cacheWriteTokens: cacheCreate,
   };
 }
 
@@ -75,10 +99,7 @@ async function chatComplete(opts: ChatOpts): Promise<ChatResult> {
     .join('');
   return {
     content,
-    usage: {
-      promptTokens: json.usage?.input_tokens ?? 0,
-      completionTokens: json.usage?.output_tokens ?? 0,
-    },
+    usage: normalizeUsage(json.usage),
   };
 }
 

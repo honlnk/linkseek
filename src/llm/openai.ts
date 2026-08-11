@@ -6,19 +6,50 @@
  * 精简自 duet/server/src/ai/providers/openai.ts：
  * - 去掉流式 chatCompletion（MCP 工具不需要流式）
  * - 去掉 reasoning_content / onReasoning 回调
- * - usage 简化为 promptTokens / completionTokens 两个数字
  */
-import { trimBaseUrl, readErrorBody, AiError } from './shared.js';
-import type { ChatOpts, ChatResult, ProviderAdapter, ChatMessage } from './types.js';
+import { trimBaseUrl, readErrorBody, AiError, EMPTY_USAGE } from './shared.js';
+import type { ChatOpts, ChatResult, ProviderAdapter, ChatMessage, NormalizedUsage } from './types.js';
+
+/** OpenAI usage（DeepSeek 系额外带 prompt_cache_*；OpenAI 官方走 prompt_tokens_details.cached_tokens） */
+interface OpenAIUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  // DeepSeek / 部分中转原生提供的缓存拆分字段
+  prompt_cache_hit_tokens?: number;
+  prompt_cache_miss_tokens?: number;
+  prompt_cache_write_tokens?: number;
+  // OpenAI 官方的缓存命中（嵌套在 details 里）
+  prompt_tokens_details?: { cached_tokens?: number };
+}
 
 /** OpenAI 非流式响应 */
 interface ChatCompletionResponse {
   choices?: Array<{
     message?: { content?: string };
   }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
+  usage?: OpenAIUsage;
+}
+
+/**
+ * 归一化 usage：
+ * - DeepSeek 系原生带 prompt_cache_hit/miss_tokens，直接透传；
+ * - OpenAI 官方只给 prompt_tokens_details.cached_tokens，miss = max(0, prompt - cached)；
+ * - 缓存写入 OpenAI 不提供，恒为 0。
+ */
+function normalizeUsage(u: OpenAIUsage | undefined): NormalizedUsage {
+  if (!u) return { ...EMPTY_USAGE };
+  const prompt = u.prompt_tokens ?? 0;
+  const cached = u.prompt_tokens_details?.cached_tokens ?? 0;
+  // 优先用上游原生拆分（DeepSeek）；否则由 cached_tokens 反推 miss
+  const hit = u.prompt_cache_hit_tokens ?? cached;
+  const miss =
+    u.prompt_cache_miss_tokens ?? (cached > 0 ? Math.max(0, prompt - cached) : prompt);
+  return {
+    promptTokens: prompt,
+    completionTokens: u.completion_tokens ?? 0,
+    cacheHitTokens: hit,
+    cacheMissTokens: miss,
+    cacheWriteTokens: u.prompt_cache_write_tokens ?? 0,
   };
 }
 
@@ -52,10 +83,7 @@ async function chatComplete(opts: ChatOpts): Promise<ChatResult> {
   const json = (await resp.json()) as ChatCompletionResponse;
   return {
     content: json.choices?.[0]?.message?.content || '',
-    usage: {
-      promptTokens: json.usage?.prompt_tokens ?? 0,
-      completionTokens: json.usage?.completion_tokens ?? 0,
-    },
+    usage: normalizeUsage(json.usage),
   };
 }
 

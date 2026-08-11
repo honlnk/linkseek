@@ -1,7 +1,17 @@
 /**
- * 适配器公共工具：错误类、baseUrl 规范化、错误体读取。
+ * 适配器公共工具：错误类、baseUrl 规范化、错误体读取、空 usage 常量。
  * 各协议适配器复用这些能力。
  */
+import type { NormalizedUsage } from './types.js';
+
+/** 全零 usage（上游未返回 usage 时用） */
+export const EMPTY_USAGE: NormalizedUsage = {
+  promptTokens: 0,
+  completionTokens: 0,
+  cacheHitTokens: 0,
+  cacheMissTokens: 0,
+  cacheWriteTokens: 0,
+};
 
 /** LLM 调用错误（带 HTTP 状态码，便于上层判断） */
 export class AiError extends Error {

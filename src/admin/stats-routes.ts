@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { requireAdmin } from '../auth/session.js';
+import { config } from '../config.js';
 
 /**
  * 把 Date 转成 YYYY-MM-DD（UTC）。
@@ -66,8 +67,8 @@ export function createStatsRouter(): Router {
     const days = Math.min(Number(req.query.days) || 7, 90);
     const bucket = req.query.bucket === 'hour' ? 'hour' : 'day' as const;
 
-    // 全历史口径：总请求数、各工具分布、已启用 Key 数、Key 总数
-    const [total, byTool, enabledKeys, totalKeys] = await Promise.all([
+    // 全历史口径：总请求数、各工具分布、已启用 Key 数、Key 总数、AI token/成本总计
+    const [total, byTool, enabledKeys, totalKeys, aiAgg] = await Promise.all([
       prisma.usageLog.count(),
       prisma.usageLog.groupBy({
         by: ['toolName'],
@@ -75,6 +76,14 @@ export function createStatsRouter(): Router {
       }),
       prisma.apiKey.count({ where: { enabled: true } }),
       prisma.apiKey.count(),
+      prisma.usageLog.aggregate({
+        _sum: {
+          promptTokens: true,
+          completionTokens: true,
+          cacheHitTokens: true,
+          cost: true,
+        },
+      }),
     ]);
 
     // 近 N 天用量趋势，全程用 UTC 避免时区错位
@@ -84,19 +93,29 @@ export function createStatsRouter(): Router {
 
     const logs = await prisma.usageLog.findMany({
       where: { createdAt: { gte: since } },
-      select: { toolName: true, createdAt: true, keyId: true },
+      select: {
+        toolName: true,
+        createdAt: true,
+        keyId: true,
+        promptTokens: true,
+        completionTokens: true,
+        cacheHitTokens: true,
+        cost: true,
+      },
     });
 
     // 活跃 Key：选定窗口内有过调用的不同 keyId 数量（随时间范围变化）
     const activeKeys = new Set(logs.map((l) => l.keyId)).size;
 
-    // 聚合成 { bucketKey: { tool: count } }
+    // 聚合成 { bucketKey: { tool: count } }，并按桶累加 cost
     const trend: Record<string, Record<string, number>> = {};
+    const trendCost: Record<string, number> = {};
     const toKey = bucket === 'hour' ? toUTCHourKey : toUTCDateKey;
     for (const log of logs) {
       const key = toKey(log.createdAt);
       if (!trend[key]) trend[key] = {};
       trend[key][log.toolName] = (trend[key][log.toolName] ?? 0) + 1;
+      trendCost[key] = (trendCost[key] ?? 0) + log.cost;
     }
 
     // 补齐缺失的桶，确保趋势图连续（含今天/当前小时）
@@ -105,6 +124,7 @@ export function createStatsRouter(): Router {
       const allKeys = fillHourRange(since, nowHour);
       for (const k of allKeys) {
         if (!trend[k]) trend[k] = {};
+        if (!(k in trendCost)) trendCost[k] = 0;
       }
     } else {
       const todayKey = toUTCDateKey(new Date());
@@ -112,6 +132,7 @@ export function createStatsRouter(): Router {
       const allDates = fillDateRange(sinceKey, todayKey);
       for (const d of allDates) {
         if (!trend[d]) trend[d] = {};
+        if (!(d in trendCost)) trendCost[d] = 0;
       }
     }
 
@@ -121,9 +142,17 @@ export function createStatsRouter(): Router {
       enabledKeys,
       totalKeys,
       byTool: byTool.map((t) => ({ tool: t.toolName, count: t._count._all })),
+      // AI 用量与成本（全历史累计）
+      ai: {
+        promptTokens: aiAgg._sum.promptTokens ?? 0,
+        completionTokens: aiAgg._sum.completionTokens ?? 0,
+        cacheHitTokens: aiAgg._sum.cacheHitTokens ?? 0,
+        cost: aiAgg._sum.cost ?? 0,
+      },
       trend: Object.entries(trend)
-        .map(([date, counts]) => ({ date, counts }))
+        .map(([date, counts]) => ({ date, counts, cost: trendCost[date] ?? 0 }))
         .sort((a, b) => a.date.localeCompare(b.date)),
+      currency: config.CURRENCY,
     });
   });
 

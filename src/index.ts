@@ -11,6 +11,7 @@ import { createApiKeyVerifier } from './auth/verifier.js';
 import { sessionMiddleware } from './auth/session.js';
 import { registerTools } from './tools/register.js';
 import { recordUsage } from './utils/usage.js';
+import { requestContext } from './utils/request-context.js';
 import { createAdminRouter } from './admin/router.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -79,23 +80,27 @@ const mcpAuth = requireBearerAuth({
 async function handleMcpRequest(req: express.Request, res: express.Response) {
   const server = await createServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  // 提前取出 keyId / toolName（ALS 上下文 + 用量记录都用）
+  const keyId = req.auth?.extra?.keyId as string | undefined;
+  const body = req.body as { method?: string; params?: { name?: string } } | undefined;
+  const toolName = body?.method === 'tools/call' ? body.params?.name : undefined;
+
+  // 用 ALS 建立请求上下文：AI 工具会在其中回写 token 用量，
+  // 请求结束后这里读出，连同 success 一起记入 UsageLog。
+  const ctx: { keyId?: string; ai?: import('./utils/request-context.js').AiUsagePayload } = { keyId };
   try {
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    await requestContext.run(ctx, async () => {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    });
 
     // 用量记录：仅对 tools/call 请求记录
-    const keyId = req.auth?.extra?.keyId as string | undefined;
-    const body = req.body as { method?: string; params?: { name?: string } } | undefined;
-    const toolName = body?.method === 'tools/call' ? body.params?.name : undefined;
     if (keyId && toolName) {
-      recordUsage(keyId, toolName, true);
+      recordUsage(keyId, toolName, true, ctx.ai);
     }
   } catch (err) {
     logger.error({ err }, 'MCP 请求处理失败');
-    // 失败也记录用量（如果知道工具名）
-    const keyId = req.auth?.extra?.keyId as string | undefined;
-    const body = req.body as { method?: string; params?: { name?: string } } | undefined;
-    const toolName = body?.method === 'tools/call' ? body.params?.name : undefined;
+    // 失败也记录用量（如果知道工具名）。错误路径不带 ai 用量。
     if (keyId && toolName) recordUsage(keyId, toolName, false);
     if (!res.headersSent) {
       res.status(500).json({

@@ -40,10 +40,26 @@ model UsageLog {
   success   Boolean
   createdAt DateTime @default(now())
 
+  /// AI 工具（web_fetch_answer / web_search_answer）记录所用 Provider，非 AI 工具为 null
+  providerId   String?
+  /// 调用所用模型名，非 AI 工具为 null
+  model        String?
+  promptTokens       Int   @default(0)
+  completionTokens   Int   @default(0)
+  /// 缓存命中 token
+  cacheHitTokens     Int   @default(0)
+  /// 缓存未命中 token（按全价输入计费）
+  cacheMissTokens    Int   @default(0)
+  /// 缓存写入 token（Anthropic 等少数模型）
+  cacheWriteTokens   Int   @default(0)
+  /// 单次调用估算成本（单一货币，由全局 CURRENCY 配置决定币种）
+  cost               Float @default(0)
+
   apiKey ApiKey @relation(fields: [keyId], references: [id], onDelete: Cascade)
 
   @@index([keyId, createdAt])
   @@index([createdAt])
+  @@index([providerId])
 }
 
 /// LLM Provider —— 配置的 AI 模型供应商（用于 web_fetch_answer / web_search_answer 工具）
@@ -65,6 +81,8 @@ model LlmProvider {
   enabled   Boolean  @default(true)
   /// 是否为默认 Provider（全局唯一）
   isDefault Boolean  @default(false)
+  /// 价格配置（JSON：ProviderPricing，含输入/输出/缓存命中/缓存写入单价）
+  pricing   String   @default("{}")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -8,6 +8,8 @@ import { logger } from '../utils/logger.js';
 import { resolveProvider, toConnectionConfig } from '../llm/provider-store.js';
 import { getAdapter, AiError } from '../llm/index.js';
 import type { ChatMessage } from '../llm/types.js';
+import { requestContext } from '../utils/request-context.js';
+import { estimateStepCost, round6 } from '../utils/cost.js';
 
 export const webFetchAnswerInput = {
   url: z.string().url().describe('目标网页的 URL（仅支持 http/https）'),
@@ -123,9 +125,20 @@ export function registerWebFetchAnswer(server: McpServer): void {
         });
 
         logger.info(
-          { url, provider: provider.name, promptTokens: result.usage?.promptTokens, completionTokens: result.usage?.completionTokens },
+          { url, provider: provider.name, promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens },
           'web_fetch_answer 完成',
         );
+
+        // 回写请求上下文，供中间件层记录 token 用量与成本
+        const store = requestContext.getStore();
+        if (store) {
+          store.ai = {
+            providerId: provider.id,
+            model: provider.model,
+            usage: result.usage,
+            cost: round6(estimateStepCost(result.usage, provider.pricing)),
+          };
+        }
 
         return { content: [{ type: 'text', text: result.content }] };
       } catch (err) {

@@ -10,8 +10,15 @@
  *
  * 精简自 duet/server/src/ai/providers/gemini.ts。
  */
-import { trimBaseUrl, readErrorBody, AiError } from './shared.js';
-import type { ChatOpts, ChatResult, ProviderAdapter, ChatMessage } from './types.js';
+import { trimBaseUrl, readErrorBody, AiError, EMPTY_USAGE } from './shared.js';
+import type { ChatOpts, ChatResult, ProviderAdapter, ChatMessage, NormalizedUsage } from './types.js';
+
+/** Gemini usage metadata */
+interface GeminiUsage {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  cachedContentTokenCount?: number;
+}
 
 /** Gemini 非流式响应 */
 interface GeminiResponse {
@@ -19,9 +26,23 @@ interface GeminiResponse {
     content?: { parts?: Array<{ text?: string }> };
     finishReason?: string;
   }>;
-  usageMetadata?: {
-    promptTokenCount?: number;
-    candidatesTokenCount?: number;
+  usageMetadata?: GeminiUsage;
+}
+
+/**
+ * 归一化 usage：promptTokenCount→prompt、candidatesTokenCount→completion、
+ * cachedContentTokenCount→hit；miss = max(0, prompt - cached)。Gemini 无缓存写入概念。
+ */
+function normalizeUsage(u: GeminiUsage | undefined): NormalizedUsage {
+  if (!u) return { ...EMPTY_USAGE };
+  const prompt = u.promptTokenCount ?? 0;
+  const cached = u.cachedContentTokenCount ?? 0;
+  return {
+    promptTokens: prompt,
+    completionTokens: u.candidatesTokenCount ?? 0,
+    cacheHitTokens: cached,
+    cacheMissTokens: Math.max(0, prompt - cached),
+    cacheWriteTokens: 0,
   };
 }
 
@@ -75,10 +96,7 @@ async function chatComplete(opts: ChatOpts): Promise<ChatResult> {
   const content = parts ? parts.filter((p) => p.text).map((p) => p.text!).join('') : '';
   return {
     content,
-    usage: {
-      promptTokens: json.usageMetadata?.promptTokenCount ?? 0,
-      completionTokens: json.usageMetadata?.candidatesTokenCount ?? 0,
-    },
+    usage: normalizeUsage(json.usageMetadata),
   };
 }
 

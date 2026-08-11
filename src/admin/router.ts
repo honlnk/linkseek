@@ -3,6 +3,7 @@ import { createAuthRouter } from './auth-routes.js';
 import { createKeyRouter } from './key-routes.js';
 import { createStatsRouter } from './stats-routes.js';
 import { createLlmProviderRouter } from './llm-provider-routes.js';
+import { createPricingRouter } from './pricing-routes.js';
 
 /**
  * 管理后台 REST API 总路由。
@@ -17,5 +18,6 @@ export function createAdminRouter(): Router {
   router.use('/keys', createKeyRouter());
   router.use('/stats', createStatsRouter());
   router.use('/llm-providers', createLlmProviderRouter());
+  router.use('/pricing', createPricingRouter());
   return router;
 }

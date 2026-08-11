@@ -83,6 +83,11 @@ const schema = z.object({
   LLM_TIMEOUT: z.coerce.number().int().positive().default(60_000),
   // QA 回答最大 token 数
   LLM_MAX_TOKENS: z.coerce.number().int().positive().default(2000),
+  // ---- 成本统计（单一货币）----
+  // 全局展示货币代码（仅用于符号展示，成本为纯数字累加不做汇率转换）
+  CURRENCY: z.string().default('CNY'),
+  // OpenRouter 查价时的 USD→展示货币 折算率（仅在 CURRENCY≠USD 时用于一次性折算参考价）
+  PRICING_USD_RATE: z.coerce.number().positive().default(7),
   FETCH_TIMEOUT: z.coerce.number().int().positive().default(30_000),
   MAX_RESPONSE_SIZE: z.coerce.number().int().positive().default(5_242_880),
   MAX_REDIRECTS: z.coerce.number().int().positive().default(5),

@@ -9,6 +9,22 @@ import { api, type OverviewStats, type TopKeysResp } from '../api.js';
 /** 趋势时间范围选择 */
 type RangeKey = 'today' | 'week' | 'd14' | 'd30';
 
+/** 货币代码 → 符号 */
+const currencySymbols: Record<string, string> = { CNY: '¥', USD: '$', EUR: '€' };
+function currencySymbol(code: string): string {
+  return currencySymbols[code] ?? code + ' ';
+}
+
+/** 金额格式化：保留 4 位小数（成本通常很小） */
+function formatCost(n: number): string {
+  return n.toFixed(4);
+}
+
+/** token 千分位格式化 */
+function formatTokens(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
 /**
  * 把范围 key 映射成后端的 days 参数（后端按 UTC 分桶）。
  * - today：1（当天，配合 bucket=hour 按小时展示）
@@ -287,6 +303,36 @@ const topKeysOption = computed<EChartsOption>(() => {
         <NGridItem span="4 m:2 l:1">
           <NCard>
             <NStatistic label="日均请求" :value="dailyAvg" />
+          </NCard>
+        </NGridItem>
+      </NGrid>
+
+      <!-- AI 消耗统计（token + 金额，全历史累计） -->
+      <NGrid :cols="4" :x-gap="16" responsive="screen" item-responsive>
+        <NGridItem span="4 m:2 l:1">
+          <NCard>
+            <NStatistic label="AI 消耗金额">
+              <template #default>
+                <span style="font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums;">
+                  {{ currencySymbol(stats.currency) }}{{ formatCost(stats.ai.cost) }}
+                </span>
+              </template>
+            </NStatistic>
+          </NCard>
+        </NGridItem>
+        <NGridItem span="4 m:2 l:1">
+          <NCard>
+            <NStatistic label="输入 Token" :value="formatTokens(stats.ai.promptTokens)" />
+          </NCard>
+        </NGridItem>
+        <NGridItem span="4 m:2 l:1">
+          <NCard>
+            <NStatistic label="输出 Token" :value="formatTokens(stats.ai.completionTokens)" />
+          </NCard>
+        </NGridItem>
+        <NGridItem span="4 m:2 l:1">
+          <NCard>
+            <NStatistic label="缓存命中 Token" :value="formatTokens(stats.ai.cacheHitTokens)" />
           </NCard>
         </NGridItem>
       </NGrid>
