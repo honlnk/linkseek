@@ -89,6 +89,28 @@ const schema = z.object({
   // OpenRouter 查价时的 USD→展示货币 折算率（仅在 CURRENCY≠USD 时用于一次性折算参考价）
   PRICING_USD_RATE: z.coerce.number().positive().default(7),
   FETCH_TIMEOUT: z.coerce.number().int().positive().default(30_000),
+  // ---- 公开 REST API（/v1/search、/v1/fetch）绿灯通道 ----
+  // Origin 白名单（逗号分隔）。匿名（无 API Key）请求要求 Origin 命中白名单，
+  // 否则拒绝。未配置 = 绿灯整体关闭（不影响 key 鉴权流量）。
+  // 注意：Origin 头只对浏览器有约束力，非浏览器客户端可伪造——它是防误用的软开关，
+  // 真正的防线是下面的配额与限流。
+  PUBLIC_API_ALLOWED_ORIGINS: z
+    .string()
+    .default('')
+    .transform((v) =>
+      v
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  // 匿名配额：每身份（cid/ip）每天加权上限
+  PUBLIC_API_DAILY_LIMIT: z.coerce.number().int().positive().default(50),
+  // IP 总闸：每 IP 每天加权上限（防批量换 clientId）
+  PUBLIC_API_IP_DAILY_LIMIT: z.coerce.number().int().positive().default(200),
+  // 浏览器渲染的加权成本（普通请求计 1）
+  PUBLIC_API_RENDER_COST: z.coerce.number().int().positive().default(2),
+  // 突发限流：每身份每分钟最多请求数（内存滑动窗口）
+  PUBLIC_API_BURST_PER_MINUTE: z.coerce.number().int().positive().default(10),
   MAX_RESPONSE_SIZE: z.coerce.number().int().positive().default(5_242_880),
   MAX_REDIRECTS: z.coerce.number().int().positive().default(5),
   SSRF_STRICT: z

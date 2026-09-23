@@ -13,6 +13,7 @@ import { registerTools } from './tools/register.js';
 import { recordUsage } from './utils/usage.js';
 import { requestContext } from './utils/request-context.js';
 import { createAdminRouter } from './admin/router.js';
+import { createPublicApiRouter } from './public-api/router.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const keyStore = createKeyStore();
@@ -25,6 +26,11 @@ if (isProduction) app.set('trust proxy', 1);
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
+
+// ---- 公开 REST API（/v1/search、/v1/fetch）----
+// 挂在域名分流中间件之前：NovAI 浏览器端从公开文档域名直连，必须对所有 Host 可达。
+// 端点内部自行处理鉴权分流（Bearer Key / 匿名绿灯 + Origin 白名单 + 配额）。
+app.use('/v1', createPublicApiRouter(keyStore));
 
 // ---- 默认站点（文档 + MCP）vs 后台站点（Vue SPA）----
 // linkseek 默认行为是「文档站 + MCP 服务」，后台管理是特例。

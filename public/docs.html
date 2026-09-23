@@ -402,6 +402,74 @@
     </div>
   </section>
 
+  <!-- Public REST API -->
+  <section id="rest-api">
+    <div class="container">
+      <p class="section-title">公开 REST API</p>
+      <h2>不走 MCP 的直接调用（/v1）</h2>
+      <p class="section-desc">为浏览器端应用（如 NovAI）准备的薄 REST 适配层，复用同一套搜索与抓取核心。只暴露搜索和抓取，AI 问答工具不在此开放。</p>
+
+      <table>
+        <thead>
+          <tr><th>端点</th><th>请求体</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>POST /v1/search</code></td><td><code>query</code> 必填；可选 <code>maxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferredSites</code></td><td>返回 <code>{ query, count, results[] }</code>；无结果时附 <code>hint</code> 诊断建议</td></tr>
+          <tr><td><code>POST /v1/fetch</code></td><td><code>url</code> 必填；可选 <code>render: "auto"</code></td><td>返回 <code>{ finalUrl, statusCode, content, truncated, renderedBy }</code>；<code>render:"auto"</code> 时普通抓取命中低质量判定（WAF 挑战页/极短/低文本密度）自动升级浏览器渲染，响应 <code>renderedBy</code> 为 <code>http</code> 或 <code>browser</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>两种鉴权方式</h3>
+      <ul>
+        <li><strong>API Key</strong>：<code>Authorization: Bearer &lt;key&gt;</code>，不限配额，用量记后台 UsageLog。</li>
+        <li><strong>匿名绿灯</strong>：无 Key，要求浏览器 <code>Origin</code> 命中服务端白名单（<code>PUBLIC_API_ALLOWED_ORIGINS</code>），按配额放行。配额键优先取 <code>X-NovAI-Client-Id</code> 请求头（NovAI 前端自动携带），缺失时按 IP。</li>
+      </ul>
+
+      <h3>匿名配额规则</h3>
+      <table>
+        <thead><tr><th>规则</th><th>默认值</th><th>环境变量</th></tr></thead>
+        <tbody>
+          <tr><td>每身份每日（加权）</td><td>50 次</td><td><code>PUBLIC_API_DAILY_LIMIT</code></td></tr>
+          <tr><td>每 IP 每日总闸（加权）</td><td>200 次</td><td><code>PUBLIC_API_IP_DAILY_LIMIT</code></td></tr>
+          <tr><td>浏览器渲染加权</td><td>计 2 次（普通请求计 1）</td><td><code>PUBLIC_API_RENDER_COST</code></td></tr>
+          <tr><td>突发限流</td><td>10 次/分钟/身份</td><td><code>PUBLIC_API_BURST_PER_MINUTE</code></td></tr>
+        </tbody>
+      </table>
+      <p>按服务器本地日期重置。超限返回 <code>429 QUOTA_EXCEEDED</code> / <code>429 RATE_LIMITED</code>，错误体为 <code>{ "error": { "code", "message" } }</code>。</p>
+
+      <h3>错误码速查</h3>
+      <table>
+        <thead><tr><th>HTTP</th><th>code</th><th>含义</th></tr></thead>
+        <tbody>
+          <tr><td>400</td><td><code>BAD_REQUEST</code></td><td>请求参数不合法</td></tr>
+          <tr><td>401</td><td><code>UNAUTHORIZED</code> / <code>ORIGIN_REQUIRED</code></td><td>Key 无效；或匿名请求缺少浏览器 Origin</td></tr>
+          <tr><td>403</td><td><code>ORIGIN_FORBIDDEN</code> / <code>FETCH_SSRF_BLOCKED</code></td><td>来源不在白名单；或目标 URL 命中 SSRF 防护</td></tr>
+          <tr><td>429</td><td><code>QUOTA_EXCEEDED</code> / <code>RATE_LIMITED</code></td><td>日配额用尽 / 突发限流</td></tr>
+          <tr><td>502</td><td><code>SEARCH_FAILED</code> / <code>FETCH_FAILED</code></td><td>上游失败（响应含 <code>kind</code>、<code>upstreamStatus</code> 细节）</td></tr>
+          <tr><td>503</td><td><code>GREENLIGHT_UNAVAILABLE</code></td><td>服务端未配置数据库，匿名通道关闭</td></tr>
+        </tbody>
+      </table>
+
+      <h3>curl 示例</h3>
+      <pre><code># API Key 方式
+curl https://linkseek.honlnk.com/v1/search \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Node.js LTS 版本", "maxResults": 5}'
+
+# 匿名绿灯（浏览器场景；curl 模拟需自带白名单内的 Origin）
+curl https://linkseek.honlnk.com/v1/fetch \
+  -H "Content-Type: application/json" \
+  -H "Origin: https://novai.example.com" \
+  -H "X-NovAI-Client-Id: 550e8400-e29b-41d4-a716-446655440000" \
+  -d '{"url": "https://example.com", "render": "auto"}'</code></pre>
+
+      <div class="callout callout-warn">
+        <strong>部署红线：</strong>开放匿名绿灯前，确认 browserless 容器网络已隔离（不通内网、不可达云元数据端点）——渲染路径的 SSRF 防护弱于普通抓取（DNS 由容器解析），容器网络隔离是兜底。
+      </div>
+    </div>
+  </section>
+
   <!-- Deploy -->
   <section id="deploy">
     <div class="container">

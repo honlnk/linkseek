@@ -36,12 +36,31 @@ export class FetchError extends Error {
   }
 }
 
+/** 抓取结果的结构化视图（REST 公开 API 用；MCP 链路仍走 fetchPageAsMarkdown 纯文本） */
+export interface FetchPageResult {
+  /** Markdown 正文（超限时含文末截断标记，与 MCP 行为一致） */
+  markdown: string;
+  /** 重定向链终点 URL */
+  finalUrl: string;
+  /** 终点响应的 HTTP 状态码 */
+  statusCode: number;
+  /** 正文是否因 100KB 上限被截断 */
+  truncated: boolean;
+}
+
 /**
- * 安全获取网页内容，返回 Markdown 正文。
+ * 安全获取网页内容，返回 Markdown 正文（纯文本包装，MCP 工具用）。
+ */
+export function fetchPageAsMarkdown(rawUrl: string): Promise<string> {
+  return fetchPageDetailed(rawUrl).then((r) => r.markdown);
+}
+
+/**
+ * 安全获取网页内容，返回 Markdown 正文 + 结构化元信息。
  *
  * 流程：URL 校验 → 逐跳重定向（每跳重新校验） → 读取响应体（带大小限制） → HTML→Markdown → 截断
  */
-export async function fetchPageAsMarkdown(rawUrl: string): Promise<string> {
+export async function fetchPageDetailed(rawUrl: string): Promise<FetchPageResult> {
   let currentUrl = validateUrl(rawUrl);
   let redirects = 0;
 
@@ -108,14 +127,16 @@ export async function fetchPageAsMarkdown(rawUrl: string): Promise<string> {
 
   // 非 HTML 直接当文本返回
   if (!contentType.includes('html') && !contentType.includes('xml')) {
-    return truncate(html);
+    const t = truncateWithInfo(html);
+    return { markdown: t.text, finalUrl: currentUrl.href, statusCode: response.status, truncated: t.truncated };
   }
 
   const markdown = htmlToMarkdown(html, currentUrl.href);
   if (!markdown) {
-    throw new FetchError('页面正文为空（可能是 JS 渲染的 SPA），建议使用 web_fetch_render 工具重试', 'http');
+    throw new FetchError('页面正文为空（可能是 JS 渲染的 SPA），建议使用 web_fetch_render 工具重试', 'http', response.status);
   }
-  return truncate(markdown);
+  const t = truncateWithInfo(markdown);
+  return { markdown: t.text, finalUrl: currentUrl.href, statusCode: response.status, truncated: t.truncated };
 }
 
 /** 带大小上限的流式读取，超限直接抛错 */
@@ -143,12 +164,17 @@ async function readBodyWithLimit(response: Response, limitBytes: number): Promis
   return chunks.join('');
 }
 
-/** 内容截断到 MAX_CONTENT_BYTES */
+/** 内容截断到 MAX_CONTENT_BYTES（MCP 链路惯用签名） */
 export function truncate(text: string): string {
+  return truncateWithInfo(text).text;
+}
+
+/** 截断并告知是否发生了截断（REST 公开 API 需要 truncated 标志） */
+export function truncateWithInfo(text: string): { text: string; truncated: boolean } {
   const bytes = Buffer.byteLength(text, 'utf-8');
-  if (bytes <= MAX_CONTENT_BYTES) return text;
+  if (bytes <= MAX_CONTENT_BYTES) return { text, truncated: false };
   const truncated = Buffer.from(text, 'utf-8').subarray(0, MAX_CONTENT_BYTES).toString('utf-8');
-  return `${truncated}\n\n---\n[内容已截断，原文约 ${formatBytes(bytes)}]`;
+  return { text: `${truncated}\n\n---\n[内容已截断，原文约 ${formatBytes(bytes)}]`, truncated: true };
 }
 
 export function formatBytes(bytes: number): string {

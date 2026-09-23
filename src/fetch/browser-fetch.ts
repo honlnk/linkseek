@@ -3,7 +3,7 @@ import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { validateUrl, SsrfError } from './url-validator.js';
 import { htmlToMarkdown } from './html-to-md.js';
-import { FetchError, truncate } from './http-fetch.js';
+import { FetchError, truncateWithInfo } from './http-fetch.js';
 
 /**
  * 真实 Chrome UA（与 http-fetch.ts 的 COMMON_HEADERS 保持一致，降低 WAF 识别概率）。
@@ -60,6 +60,11 @@ export class BrowserFetchProvider {
     this.wsEndpoint = buildWsEndpoint(baseUrl);
   }
 
+  /** 渲染结果的结构化视图（REST 公开 API 的 truncated 标志用） */
+  async renderAsMarkdown(rawUrl: string): Promise<string> {
+    return (await this.renderAsMarkdownDetailed(rawUrl)).markdown;
+  }
+
   /**
    * 渲染指定 URL 并返回 Markdown 正文。
    *
@@ -67,7 +72,7 @@ export class BrowserFetchProvider {
    *       newContext（UA + viewport + locale）→ domcontentloaded + 等主体 →
    *       HTML→Markdown → 截断
    */
-  async renderAsMarkdown(rawUrl: string): Promise<string> {
+  async renderAsMarkdownDetailed(rawUrl: string): Promise<{ markdown: string; truncated: boolean }> {
     // 第一道防线：静态 SSRF 校验（拦截字面量内网 IP、协议、userinfo）
     const safeUrl = validateUrl(rawUrl);
     const target = safeUrl.href;
@@ -113,7 +118,8 @@ export class BrowserFetchProvider {
       if (!markdown) {
         throw new FetchError('渲染后页面正文为空', 'http');
       }
-      return truncate(markdown);
+      const t = truncateWithInfo(markdown);
+      return { markdown: t.text, truncated: t.truncated };
     } catch (err) {
       // 完整透传真实错误信息（解决旧架构"丢弃 error 文本"的黑盒问题）
       if (err instanceof FetchError || err instanceof SsrfError) {

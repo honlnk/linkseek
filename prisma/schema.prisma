@@ -97,3 +97,18 @@ model AdminUser {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+/// 匿名免费额度用量 —— 公开 REST API（/v1/*）绿灯通道的按日配额计数。
+/// 与 UsageLog 分离：UsageLog 挂 ApiKey 外键记 key 鉴权流量，本表记匿名流量。
+model FreeUsage {
+  id        BigInt   @id @default(autoincrement())
+  /// 日期桶（服务器本地时区，YYYY-MM-DD）
+  day       String
+  /// 配额键：cid:<clientId>（NovAI 匿名客户端）或 ip:<ip>（无 clientId 时兜底 / IP 总闸）
+  quotaKey  String
+  /// 加权已用量：普通搜索/抓取计 1，命中浏览器渲染计 PUBLIC_API_RENDER_COST（默认 2）
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([day, quotaKey])
+}
