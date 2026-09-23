@@ -20,8 +20,10 @@ const keyStore = createKeyStore();
 
 const app = express();
 app.use(express.json());
-// 生产环境在 Nginx 后面，需要信任代理以获取真实协议/IP（影响 secure cookie）
-if (isProduction) app.set('trust proxy', 1);
+// 生产环境在双层网关后面（honlnk-gateway → linkseek-gateway → app），
+// 需信任两跳才能从 X-Forwarded-For 解出真实客户端 IP（影响 secure cookie 与
+// /v1 匿名配额的 IP 总闸——少信一跳会把全体用户记到网关容器 IP 上共享配额）。
+if (isProduction) app.set('trust proxy', 2);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
