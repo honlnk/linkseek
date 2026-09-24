@@ -10,6 +10,7 @@ import { browserFetchProvider } from '../fetch/browser-fetch.js';
 import { isLowQualityContent } from '../fetch/content-quality.js';
 import { SsrfError } from '../fetch/url-validator.js';
 import { recordUsage } from '../utils/usage.js';
+import { BUILTIN_NOVAI_KEY_ID } from '../lib/builtin-keys.js';
 import { resolveQuotaKeys, quotaAvailable, consumeQuota, type QuotaKeys } from './quota.js';
 import { burstAllow } from './burst.js';
 
@@ -18,7 +19,8 @@ import { burstAllow } from './burst.js';
  *
  * 两类调用方：
  * - key 鉴权（Authorization: Bearer <key>）：自部署/付费形态，复用 ApiKey 校验，
- *   调用记 UsageLog（toolName 与 MCP 工具同名，渲染升级记 web_fetch_render）。
+ *   调用记 UsageLog（toolName 与 MCP 工具同名，渲染升级记 web_fetch_render）；
+ *   匿名调用量归集到内置 NovAI 伪 Key（见 lib/builtin-keys.ts），管理台可见。
  * - 匿名绿灯（无 Authorization，供 NovAI 官方站点零配置用户）：
  *   Origin 白名单 + 日配额（加权）+ 突发限流。仅开放搜索与抓取；
  *   AI 工具（answer 系列）不在此暴露（烧宿主 LLM token，成本红线）。
@@ -48,6 +50,11 @@ type Caller = { kind: 'key'; keyId: string } | ({ kind: 'anon' } & QuotaKeys);
 
 function errorJson(res: Response, status: number, code: string, message: string): void {
   res.status(status).json({ error: { code, message } });
+}
+
+/** 用量落表：Key 调用记到对应 Key，匿名调用归集到内置 NovAI 伪 Key。 */
+function recordCallerUsage(caller: Caller, toolName: string, success: boolean): void {
+  recordUsage(caller.kind === 'key' ? caller.keyId : BUILTIN_NOVAI_KEY_ID, toolName, success);
 }
 
 /**
@@ -190,7 +197,7 @@ export function createPublicApiRouter(keyStore: KeyStore): Router {
         preferredSites,
       });
       if (caller.kind === 'anon') await consumeQuota(caller, 1);
-      else recordUsage(caller.keyId, 'web_search', true);
+      recordCallerUsage(caller, 'web_search', true);
       res.json({
         query,
         count: results.length,
@@ -199,7 +206,7 @@ export function createPublicApiRouter(keyStore: KeyStore): Router {
       });
     } catch (err) {
       logger.warn({ err, query }, '公开搜索失败');
-      if (caller.kind === 'key') recordUsage(caller.keyId, 'web_search', false);
+      recordCallerUsage(caller, 'web_search', false);
       errorJson(res, 502, 'SEARCH_FAILED', `搜索失败: ${errMessage(err)}`);
     }
   });
@@ -219,12 +226,10 @@ export function createPublicApiRouter(keyStore: KeyStore): Router {
       const outcome = render === 'auto' ? await fetchWithAutoRender(url) : plainOutcome(await fetchPageDetailed(url));
       const cost = outcome.renderedBy === 'browser' ? config.PUBLIC_API_RENDER_COST : 1;
       if (caller.kind === 'anon') await consumeQuota(caller, cost);
-      else recordUsage(caller.keyId, outcome.renderedBy === 'browser' ? 'web_fetch_render' : 'web_fetch', true);
+      recordCallerUsage(caller, outcome.renderedBy === 'browser' ? 'web_fetch_render' : 'web_fetch', true);
       res.json(outcome);
     } catch (err) {
-      if (caller.kind === 'key') {
-        recordUsage(caller.keyId, render === 'auto' ? 'web_fetch_render' : 'web_fetch', false);
-      }
+      recordCallerUsage(caller, render === 'auto' ? 'web_fetch_render' : 'web_fetch', false);
       if (err instanceof SsrfError) {
         errorJson(res, 403, 'FETCH_SSRF_BLOCKED', err.message);
         return;

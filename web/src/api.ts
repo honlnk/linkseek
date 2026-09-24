@@ -35,6 +35,9 @@ export async function checkLogin(): Promise<boolean> {
 
 // ---- 类型 ----
 
+/** 内置 NovAI 伪 Key：匿名绿灯调用的用量归集行，不可删除 */
+export const BUILTIN_NOVAI_KEY_ID = 'novai-greenlight';
+
 export interface ApiKeyItem {
   id: string;
   name: string;

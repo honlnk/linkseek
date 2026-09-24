@@ -15,7 +15,7 @@ import {
 import type { EChartsOption } from 'echarts';
 import EChart from '../components/EChart.vue';
 import { toolColor } from '../shared.js';
-import { api, type ApiKeyItem, type KeyStats } from '../api.js';
+import { api, BUILTIN_NOVAI_KEY_ID, type ApiKeyItem, type KeyStats } from '../api.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -23,6 +23,7 @@ const router = useRouter();
 const keyDetail = ref<ApiKeyItem | null>(null);
 const stats = ref<KeyStats | null>(null);
 const loading = ref(true);
+const isBuiltinKey = computed(() => keyDetail.value?.id === BUILTIN_NOVAI_KEY_ID);
 
 async function load() {
   const id = route.params.id as string;
@@ -150,7 +151,7 @@ const trendOption = computed<EChartsOption>(() => {
       <NCard>
         <NDescriptions :column="3" bordered label-placement="left">
           <NDescriptionsItem label="Key 前缀">
-            <code>{{ keyDetail.tokenPrefix }}...</code>
+            <code>{{ keyDetail.tokenPrefix }}{{ isBuiltinKey ? '' : '...' }}</code>
           </NDescriptionsItem>
           <NDescriptionsItem label="状态">
             <NTag :type="keyDetail.enabled ? 'success' : 'error'">
@@ -161,10 +162,10 @@ const trendOption = computed<EChartsOption>(() => {
             {{ keyDetail._count?.usages ?? 0 }}
           </NDescriptionsItem>
           <NDescriptionsItem label="创建时间">
-            {{ new Date(keyDetail.createdAt).toLocaleString('zh-CN') }}
+            {{ isBuiltinKey ? '---' : new Date(keyDetail.createdAt).toLocaleString('zh-CN') }}
           </NDescriptionsItem>
           <NDescriptionsItem label="更新时间">
-            {{ new Date(keyDetail.updatedAt).toLocaleString('zh-CN') }}
+            {{ isBuiltinKey ? '---' : new Date(keyDetail.updatedAt).toLocaleString('zh-CN') }}
           </NDescriptionsItem>
         </NDescriptions>
       </NCard>

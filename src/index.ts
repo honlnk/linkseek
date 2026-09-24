@@ -14,6 +14,7 @@ import { recordUsage } from './utils/usage.js';
 import { requestContext } from './utils/request-context.js';
 import { createAdminRouter } from './admin/router.js';
 import { createPublicApiRouter } from './public-api/router.js';
+import { ensureBuiltinKeys } from './lib/builtin-keys.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const keyStore = createKeyStore();
@@ -157,6 +158,9 @@ app.get(/^(?!\/(api|mcp)).*/, (_req, res, next) => {
     if (err) next();
   });
 });
+
+// 内置 NovAI 用量 Key（幂等）：确保匿名绿灯调用的用量能归集进管理台
+await ensureBuiltinKeys();
 
 app.listen(config.PORT, () => {
   logger.info(`linkseek 服务已启动: http://localhost:${config.PORT}`);
