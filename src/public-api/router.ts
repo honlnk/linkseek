@@ -11,6 +11,7 @@ import { isLowQualityContent } from '../fetch/content-quality.js';
 import { SsrfError } from '../fetch/url-validator.js';
 import { recordUsage } from '../utils/usage.js';
 import { BUILTIN_NOVAI_KEY_ID } from '../lib/builtin-keys.js';
+import { prisma } from '../lib/prisma.js';
 import { resolveQuotaKeys, quotaAvailable, consumeQuota, type QuotaKeys } from './quota.js';
 import { burstAllow } from './burst.js';
 
@@ -22,13 +23,17 @@ import { burstAllow } from './burst.js';
  *   调用记 UsageLog（toolName 与 MCP 工具同名，渲染升级记 web_fetch_render）；
  *   匿名调用量归集到内置 NovAI 伪 Key（见 lib/builtin-keys.ts），管理台可见。
  * - 匿名绿灯（无 Authorization，供 NovAI 官方站点零配置用户）：
- *   Origin 白名单 + 日配额（加权）+ 突发限流。仅开放搜索与抓取；
+ *   内置 Key 总闸 + Origin 白名单 + 日配额（加权）+ 突发限流。仅开放搜索与抓取；
  *   AI 工具（answer 系列）不在此暴露（烧宿主 LLM token，成本红线）。
  */
 
 /** 绿灯超限/拒绝时返回给 NovAI 的文案——会被工具结果透传给模型，再由模型转述给用户 */
 const QUOTA_EXCEEDED_MESSAGE =
   '免费搜索额度已用完（每日 50 次），明天自动恢复。如需不限量搜索，请在设置中配置自部署 linkseek 或第三方搜索 API Key。';
+
+/** 总闸拉下时（管理台禁用内置 NovAI Key）返回给 NovAI 的文案 */
+const GREENLIGHT_DISABLED_MESSAGE =
+  '免费联网通道已被服务方停用。如需继续使用联网搜索，请在设置中配置自部署 linkseek 或第三方搜索 API Key。';
 
 const searchBodySchema = z.object({
   query: z.string().min(1),
@@ -76,6 +81,15 @@ async function resolveCaller(req: Request, res: Response, keyStore: KeyStore): P
   if (!config.DATABASE_URL) {
     // 匿名配额依赖 FreeUsage 表；无数据库时绿灯整体关闭（key 流量不受影响）
     errorJson(res, 503, 'GREENLIGHT_UNAVAILABLE', '匿名免费额度未启用（服务端未配置数据库）。请配置 API Key 使用。');
+    return null;
+  }
+  // 总闸：管理台把内置 NovAI Key 置为禁用即整体关闭匿名通道（滥用应急开关）。
+  // 行缺失时视为放行——初始化失败不应顺带掐断匿名服务。
+  const novaiSwitch = await prisma.apiKey
+    .findUnique({ where: { id: BUILTIN_NOVAI_KEY_ID }, select: { enabled: true } })
+    .catch(() => null);
+  if (novaiSwitch && !novaiSwitch.enabled) {
+    errorJson(res, 403, 'GREENLIGHT_DISABLED', GREENLIGHT_DISABLED_MESSAGE);
     return null;
   }
   const origin = req.headers.origin;

@@ -10,6 +10,8 @@ import { logger } from '../utils/logger.js';
  * 约定：
  * - id 固定，前端据此识别内置行（创建时间显示 ---、不提供删除）
  * - 无对应明文 token：tokenHash 是随机散列，鉴权永远不可能命中该行
+ * - enabled 字段被管理台用作匿名绿灯总闸：置为禁用即整体拒绝匿名调用
+ *   （见 public-api/router.ts resolveCaller；行缺失视为放行）
  * - 删除接口对该 id 返回 403
  */
 export const BUILTIN_NOVAI_KEY_ID = 'novai-greenlight';

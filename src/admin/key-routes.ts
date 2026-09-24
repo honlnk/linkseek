@@ -82,7 +82,7 @@ export function createKeyRouter(): Router {
     });
   });
 
-  /** PATCH /api/keys/:id —— 启停 Key */
+  /** PATCH /api/keys/:id —— 启停 Key。内置 NovAI Key 的启停即匿名绿灯总闸 */
   router.patch('/:id', async (req, res) => {
     const { enabled } = req.body as { enabled?: boolean };
     if (typeof enabled !== 'boolean') {

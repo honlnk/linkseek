@@ -22,7 +22,7 @@ import { api, BUILTIN_NOVAI_KEY_ID, type ApiKeyItem } from '../api.js';
 const router = useRouter();
 const message = useMessage();
 
-/** 内置 NovAI 伪 Key 行：前缀不带省略号、创建时间显示 ---、无操作 */
+/** 内置 NovAI 伪 Key 行：前缀不带省略号、创建时间显示 ---、无删除；开关是匿名通道总闸 */
 const isBuiltinKey = (row: ApiKeyItem) => row.id === BUILTIN_NOVAI_KEY_ID;
 
 const keys = ref<ApiKeyItem[]>([]);
@@ -137,7 +137,7 @@ const columns: DataTableColumns<ApiKeyItem> = [
     render(row) {
       return h(NSwitch, {
         value: row.enabled,
-        disabled: isBuiltinKey(row),
+        title: isBuiltinKey(row) ? '匿名通道总闸：关闭后所有 NovAI 匿名调用将被拒绝' : undefined,
         onUpdateValue: (v: boolean) => handleToggle(row, v),
       });
     },
