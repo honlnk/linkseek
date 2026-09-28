@@ -28,19 +28,28 @@ linkseek 默认行为是「文档站 + MCP 服务」，后台管理是特例（�
 ## 已实现功能
 
 ### MCP 服务（给 AI 工具调用）
-- ✅ 4 个 MCP 工具：`web_search` / `web_fetch` / `web_search_and_fetch` / `web_fetch_render`
+- ✅ 9 个 MCP 工具：
+  - 基础（常驻）：`web_search` / `web_fetch` / `web_search_and_fetch` / `web_fetch_render`
+  - 异步任务（常驻）：`get_result`
+  - AI 增强（后台配置 LLM Provider 后自动启用）：`web_search_answer` / `web_fetch_answer` / `list_models` / `web_research`
+- ✅ 异步任务系统：4 个慢工具支持 `defer: true` 脱手执行（立即返回 taskId）；`web_research` 深度研究流水线（问题改写 → 多轮搜索 → LLM 筛选来源 → 分块蒸馏 → 综合回答，纯异步 1-3 分钟）；`get_result` 查进度取结果；任务结果保留 60 分钟，每 Key / 全局并发上限后台可调（热生效）
 - ✅ Streamable HTTP 传输（单一 `/mcp` 端点）
 - ✅ API Key 鉴权（Bearer Token）
+- ✅ 公开 REST API（`POST /v1/search` / `POST /v1/fetch`）：浏览器端直接调用，API Key 或匿名绿灯（Origin 白名单 + 日配额）两种鉴权
 - ✅ SSRF 防护（IP 范围拦截 + DNS rebinding 防护 + 重定向逐跳校验）
 - ✅ HTML → Markdown 转换（正文提取 + 噪音去除）
 - ✅ SearXNG 元搜索引擎集成
+- ✅ 多 LLM Provider（OpenAI / Anthropic / Gemini / OpenAI Responses 协议），AI 工具可按调用切换模型，token 用量与成本自动记账
 
 ### 管理后台（网页端）
 - ✅ 管理员密码登录（argon2 哈希 + session cookie）
 - ✅ Key 管理：创建 / 列表 / 启停 / 删除
+- ✅ LLM Provider 管理：多协议接入、默认模型、启停
+- ✅ 任务设置：每 Key / 全局并发上限，保存即生效
 - ✅ 请求总览：总请求数、按工具分布、近 14 天趋势
+- ✅ Key AI 成本：按 Key 聚合的 AI 请求数 / 输入输出 token / 成本
 - ✅ 单 Key 用量统计：按工具分布 + 趋势图
-- ✅ 用量自动记录：每次 MCP 工具调用写入数据库
+- ✅ 用量自动记录：每次 MCP 工具调用写入数据库（异步任务完成时聚合为一条）
 
 ### 基础设施
 - ✅ MySQL 8.0 + Prisma ORM（数据持久化）
@@ -139,8 +148,17 @@ curl http://localhost:7300 \
 |------|------|---------|
 | `web_search` | 联网搜索 | `query`, `maxResults`, `timeRange`(day/month/year), `language` |
 | `web_fetch` | 获取网页正文（Markdown） | `url` |
-| `web_search_and_fetch` | 搜索 + 批量获取正文 | `query`, `fetchCount`, `searchMaxResults` |
-| `web_fetch_render` | 无头浏览器渲染获取 JS 动态页面（SPA），返回 Markdown | `url` |
+| `web_search_and_fetch` | 搜索 + 批量获取正文 | `query`, `fetchCount`, `searchMaxResults`, `defer` |
+| `web_fetch_render` | 无头浏览器渲染获取 JS 动态页面（SPA），返回 Markdown | `url`, `defer` |
+| `web_search_answer` | 搜索 + 抓取 + AI 综合回答（附来源引用） | `query`, `prompt`, `model`, `fetchCount`, `defer` |
+| `web_fetch_answer` | 抓取指定 URL + AI 针对问题作答 | `url`, `prompt`, `model`, `defer` |
+| `list_models` | 列出后台已启用的 AI 模型 | — |
+| `web_research` | 深度研究：多轮搜索 → 筛选 → 蒸馏 → 综合回答（纯异步，约 1-3 分钟） | `question`, `depth`(fast/standard/deep), `model` |
+| `get_result` | 查询异步任务进度 / 取结果 | `taskId` |
+
+### 异步任务用法
+
+慢工具传 `defer: true`（或直接调 `web_research`）→ 立即返回 `taskId`；期间可做其他事，之后调 `get_result` 查进度取结果（建议间隔 15-30 秒，进度文案含当前阶段）。结果保留 60 分钟；任务存于内存，服务重启后需重新提交。默认并发每 Key 3 / 全局 10，超出自动排队，后台「任务设置」可调。
 
 ## 安全说明
 
@@ -157,13 +175,16 @@ curl http://localhost:7300 \
 ├── src/                     # 后端（Node.js + Express + TypeScript）
 │   ├── index.ts             # 入口：MCP + REST API + 静态托管
 │   ├── config.ts            # 环境变量校验
-│   ├── lib/prisma.ts        # Prisma 客户端单例
+│   ├── lib/                 # Prisma 客户端 / SystemSetting 存取
 │   ├── auth/                # 鉴权（KeyStore / verifier / session）
-│   ├── admin/               # 管理 REST API（auth/keys/stats 路由）
+│   ├── admin/               # 管理 REST API（auth/keys/stats/settings 路由）
 │   ├── tools/               # MCP 工具实现
+│   ├── tasks/               # 异步任务系统（TaskManager 队列与调度 / defer / 执行器）
+│   ├── research/            # web_research 深度研究流水线
+│   ├── llm/                 # 多协议 LLM Provider 适配（OpenAI/Anthropic/Gemini/Responses）
 │   ├── search/              # SearXNG 搜索
 │   ├── fetch/               # 网页获取 + SSRF 防护
-│   └── utils/               # 日志 + 用量记录
+│   └── utils/               # 日志 + 用量记录 + 请求上下文
 ├── web/                     # 管理后台 SPA（Vue 3 + Naive UI + Vite）
 │   └── src/views/           # 登录 / 总览 / Key列表 / Key详情
 ├── searxng/                 # SearXNG 配置

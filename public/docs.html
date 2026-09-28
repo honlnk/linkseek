@@ -410,14 +410,25 @@
       </table>
 
       <h3>启用 AI 问答增强（可选）</h3>
-      <p>前 4 个工具开箱即用。如果你还想让 AI 工具直接获得「搜索即问即答」能力，只需在后台配置一个 LLM Provider：</p>
+      <p>基础搜索 / 抓取工具开箱即用（<code>get_result</code> 同样常驻，服务于异步任务）。如果你还想让 AI 工具直接获得「搜索即问即答」与深度研究能力，只需在后台配置一个 LLM Provider：</p>
       <ol>
         <li>登录管理后台，进入「<strong>LLM Providers</strong>」页面。</li>
         <li>新建 Provider，选择协议（OpenAI / Anthropic / Gemini / OpenAI Responses），填入 API Key、模型名，勾选「启用」。可设其中一个为「默认」。</li>
-        <li>保存后，应用会自动注册 <code>web_search_answer</code>、<code>web_fetch_answer</code>、<code>list_models</code> 三个工具，AI 工具即可调用。</li>
+        <li>保存后，应用会自动注册 <code>web_search_answer</code>、<code>web_fetch_answer</code>、<code>web_research</code>、<code>list_models</code> 四个工具，AI 工具即可调用。</li>
       </ol>
       <div class="callout callout-info">
-        <strong>多模型按需切换：</strong>可配置多个 Provider（如同时接 OpenAI 和 Gemini）。AI 在调用 <code>web_search_answer</code> / <code>web_fetch_answer</code> 时可通过 <code>model</code> 参数指定使用哪个；不传则用默认 Provider。
+        <strong>多模型按需切换：</strong>可配置多个 Provider（如同时接 OpenAI 和 Gemini）。AI 在调用 <code>web_search_answer</code> / <code>web_fetch_answer</code> / <code>web_research</code> 时可通过 <code>model</code> 参数指定使用哪个；不传则用默认 Provider。
+      </div>
+
+      <h3>异步任务：defer 脱手 + web_research 深度研究</h3>
+      <p>耗时调用不必同步干等，两种用法：</p>
+      <ul>
+        <li><strong>defer 脱手</strong>：给 <code>web_search_and_fetch</code> / <code>web_search_answer</code> / <code>web_fetch_answer</code> / <code>web_fetch_render</code> 传 <code>defer: true</code>，调用毫秒级返回 <code>taskId</code>，AI 可以先去做别的事。</li>
+        <li><strong>web_research 深度研究</strong>：提交一个中等复杂度的问题（如「对比两个框架的取舍」），服务端自主完成「改写 → 多轮搜索 → 筛选 → 蒸馏 → 综合」全流程，standard 档约 1-3 分钟，适合让 AI 脱手调研。</li>
+      </ul>
+      <p>之后用 <code>get_result</code> 查询（建议间隔 15-30 秒，不要连续刷）：排队 / 执行中会返回当前阶段进度（如「抓取中 2/5」「浏览器渲染中」），完成后返回与同步版格式一致的结果。</p>
+      <div class="callout callout-warn">
+        <strong>注意：</strong>任务结果保留 <strong>60 分钟</strong>，过期需重新提交；任务存于内存，服务重启后未完成任务会丢失。并发默认每 Key 3 / 全局 10，超出自动排队，可在管理后台「<strong>任务设置</strong>」调整，保存即生效。
       </div>
     </div>
   </section>
@@ -503,7 +514,7 @@ curl https://linkseek.honlnk.com/v1/fetch \
         <strong>架构一览：</strong>
         <span class="mono" style="font-size: 13px; display: block; margin-top: 8px; line-height: 1.8;">
           公网 :443 → Nginx (HTTPS) → linkseek-app:7300 (Node)<br/>
-          &nbsp;&nbsp;&nbsp;&nbsp;├── MySQL（Key / 用量 / LLM Provider 存储）<br/>
+          &nbsp;&nbsp;&nbsp;&nbsp;├── MySQL（Key / 用量 / LLM Provider / 任务设置存储）<br/>
           &nbsp;&nbsp;&nbsp;&nbsp;├── SearXNG（元搜索后端）<br/>
           &nbsp;&nbsp;&nbsp;&nbsp;└── Browserless（无头浏览器，web_fetch_render / 降级渲染用）
         </span>
@@ -626,7 +637,7 @@ docker compose -f docker-compose.prod.yml down</code></pre>
         &nbsp;·&nbsp;
         <a href="https://github.com/honlnk/linkseek/issues" target="_blank" rel="noopener">问题反馈</a>
       </p>
-      <p style="margin-top: 12px; font-size: 13px;">linkseek · 联网搜索 + AI 问答增强 · 开源自托管 MCP 服务</p>
+      <p style="margin-top: 12px; font-size: 13px;">linkseek · 联网搜索 + AI 问答与深度研究 · 开源自托管 MCP 服务</p>
     </div>
   </footer>
 </body>
