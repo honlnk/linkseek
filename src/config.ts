@@ -78,12 +78,42 @@ const schema = z.object({
   // Chromium 页面请求代理（通过 launch args --proxy-server 传入）。
   // 不配则直连。国内服务器访问境外站点时需设为与 HTTP_PROXY 一致的地址。
   BROWSER_FETCH_PROXY: z.string().optional(),
-  // ---- AI 增强（web_fetch_answer / web_search_answer）----
-  // LLM 调用超时（毫秒）；给慢模型（如 o1 / 深度思考）留足时间
-  LLM_TIMEOUT: z.coerce.number().int().positive().default(60_000),
-  // QA 回答最大 token 数
-  LLM_MAX_TOKENS: z.coerce.number().int().positive().default(2000),
+  // ---- AI 增强（web_fetch_answer / web_search_answer / web_research）----
+  // LLM 调用超时（毫秒）：10 分钟总时长闸，兜底服务端卡死无响应；
+  // 不是输出限制——除 Anthropic（协议必填，固定 8192）外不传任何输出 token 上限
+  LLM_TIMEOUT: z.coerce.number().int().positive().default(600_000),
+  // ---- 成本统计（单一货币）----
+  // 全局展示货币代码（仅用于符号展示，成本为纯数字累加不做汇率转换）
+  CURRENCY: z.string().default('CNY'),
+  // OpenRouter 查价时的 USD→展示货币 折算率（仅在 CURRENCY≠USD 时用于一次性折算参考价）
+  PRICING_USD_RATE: z.coerce.number().positive().default(7),
   FETCH_TIMEOUT: z.coerce.number().int().positive().default(30_000),
+  // ---- 公开 REST API（/v1/search、/v1/fetch）绿灯通道 ----
+  // Origin 白名单（逗号分隔）。仅控制匿名（无 API Key）请求：Origin 命中白名单
+  // 才允许走绿灯。未配置 = 绿灯整体关闭（不影响 key 鉴权流量）。
+  // Key 流量不受此限制——CORS 对所有 Origin 放行，Key 即鉴权；
+  // 注意：Origin 头只对浏览器有约束力，非浏览器客户端可伪造——它是防误用的软开关，
+  // 真正的防线是下面的配额与限流。
+  PUBLIC_API_ALLOWED_ORIGINS: z
+    .string()
+    .default('')
+    .transform((v) =>
+      v
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  // 匿名配额：每身份（cid/ip）每天加权上限
+  PUBLIC_API_DAILY_LIMIT: z.coerce.number().int().positive().default(50),
+  // IP 总闸：每 IP 每天加权上限（防批量换 clientId）
+  PUBLIC_API_IP_DAILY_LIMIT: z.coerce.number().int().positive().default(200),
+  // 浏览器渲染的加权成本（普通请求计 1）
+  PUBLIC_API_RENDER_COST: z.coerce.number().int().positive().default(2),
+  // 突发限流：每身份每分钟最多请求数（内存滑动窗口）
+  PUBLIC_API_BURST_PER_MINUTE: z.coerce.number().int().positive().default(10),
+  // Key 直连突发限流：每 Key 每分钟最多请求数（内存滑动窗口）。
+  // 高于匿名档——合法 Key 用户的 Agent 单问可达 30 次工具调用；Key 不设日配额。
+  PUBLIC_API_KEY_BURST_PER_MINUTE: z.coerce.number().int().positive().default(30),
   MAX_RESPONSE_SIZE: z.coerce.number().int().positive().default(5_242_880),
   MAX_REDIRECTS: z.coerce.number().int().positive().default(5),
   SSRF_STRICT: z

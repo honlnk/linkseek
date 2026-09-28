@@ -9,13 +9,31 @@
  *
  * 精简自 duet/server/src/ai/providers/openai-responses.ts。
  */
-import { trimBaseUrl, readErrorBody, AiError } from './shared.js';
-import type { ChatOpts, ChatResult, ProviderAdapter, ChatMessage } from './types.js';
+import { trimBaseUrl, readErrorBody, AiError, EMPTY_USAGE } from './shared.js';
+import type { ChatOpts, ChatResult, ProviderAdapter, ChatMessage, NormalizedUsage } from './types.js';
 
-/** Responses API usage */
+/** Responses API usage（input_tokens_details.cached_tokens 为缓存命中） */
 interface ResponsesUsage {
   input_tokens?: number;
   output_tokens?: number;
+  input_tokens_details?: { cached_tokens?: number };
+}
+
+/**
+ * 归一化 usage：input_tokens→prompt、output_tokens→completion、cached_tokens→hit；
+ * miss = max(0, input - cached)。Responses API 无缓存写入计费。
+ */
+function normalizeUsage(u: ResponsesUsage | undefined): NormalizedUsage {
+  if (!u) return { ...EMPTY_USAGE };
+  const input = u.input_tokens ?? 0;
+  const cached = u.input_tokens_details?.cached_tokens ?? 0;
+  return {
+    promptTokens: input,
+    completionTokens: u.output_tokens ?? 0,
+    cacheHitTokens: cached,
+    cacheMissTokens: Math.max(0, input - cached),
+    cacheWriteTokens: 0,
+  };
 }
 
 /** Responses 非流式响应 */
@@ -47,16 +65,15 @@ function toResponsesInput(messages: ChatMessage[]): {
   return result;
 }
 
-/** 非流式聊天 */
+/** 非流式聊天（不设 max_output_tokens：省略即用模型默认输出上限） */
 async function chatComplete(opts: ChatOpts): Promise<ChatResult> {
-  const { messages, conn, temperature = 0.3, maxTokens = 2000, timeout = 30_000 } = opts;
+  const { messages, conn, temperature = 0.3, timeout = 600_000 } = opts;
   const { instructions, input } = toResponsesInput(messages);
   const url = `${trimBaseUrl(conn.baseUrl)}/responses`;
   const body: Record<string, unknown> = {
     model: conn.model,
     input,
     temperature,
-    max_output_tokens: maxTokens,
     stream: false,
   };
   if (instructions) body.instructions = instructions;
@@ -86,10 +103,7 @@ async function chatComplete(opts: ChatOpts): Promise<ChatResult> {
   }
   return {
     content: content ?? '',
-    usage: {
-      promptTokens: json.usage?.input_tokens ?? 0,
-      completionTokens: json.usage?.output_tokens ?? 0,
-    },
+    usage: normalizeUsage(json.usage),
   };
 }
 

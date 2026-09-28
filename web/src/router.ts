@@ -33,6 +33,11 @@ export const router = createRouter({
           name: 'llm-providers',
           component: () => import('./views/LlmProviders.vue'),
         },
+        {
+          path: 'task-settings',
+          name: 'task-settings',
+          component: () => import('./views/TaskSettings.vue'),
+        },
       ],
     },
   ],

@@ -11,15 +11,39 @@
  *
  * 精简自 duet/server/src/ai/providers/anthropic.ts。
  */
-import { trimBaseUrl, readErrorBody, AiError } from './shared.js';
-import type { ChatOpts, ChatResult, ProviderAdapter, ChatMessage } from './types.js';
+import { trimBaseUrl, readErrorBody, AiError, EMPTY_USAGE } from './shared.js';
+import type { ChatOpts, ChatResult, ProviderAdapter, ChatMessage, NormalizedUsage } from './types.js';
+
+/** Anthropic usage（input_tokens 含缓存读取/写入，需拆分） */
+interface AnthropicUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+}
 
 /** Anthropic 非流式响应 */
 interface AnthropicResponse {
   content?: Array<{ type: string; text?: string }>;
-  usage?: {
-    input_tokens?: number;
-    output_tokens?: number;
+  usage?: AnthropicUsage;
+}
+
+/**
+ * 归一化 usage：input→prompt、output→completion、cache_read→hit、cache_creation→write。
+ * Anthropic 的 input_tokens 含全部输入（含缓存命中与写入），故未命中需扣除：
+ *   miss = max(0, input - cacheRead - cacheCreate)
+ */
+function normalizeUsage(u: AnthropicUsage | undefined): NormalizedUsage {
+  if (!u) return { ...EMPTY_USAGE };
+  const input = u.input_tokens ?? 0;
+  const cacheRead = u.cache_read_input_tokens ?? 0;
+  const cacheCreate = u.cache_creation_input_tokens ?? 0;
+  return {
+    promptTokens: input,
+    completionTokens: u.output_tokens ?? 0,
+    cacheHitTokens: cacheRead,
+    cacheMissTokens: Math.max(0, input - cacheRead - cacheCreate),
+    cacheWriteTokens: cacheCreate,
   };
 }
 
@@ -37,15 +61,16 @@ function splitSystem(messages: ChatMessage[]): { system: string; messages: ChatM
   return { system: systemParts.join('\n\n'), messages: rest };
 }
 
-/** 非流式聊天 */
+/** 非流式聊天。max_tokens 为 Anthropic 协议必填字段，固定 8192
+ *  （在售 Claude 模型输出上限均 ≥8192，此为协议占位而非截断设计，长回答被截再上调） */
 async function chatComplete(opts: ChatOpts): Promise<ChatResult> {
-  const { messages, conn, temperature = 0.3, maxTokens = 2000, timeout = 30_000 } = opts;
+  const { messages, conn, temperature = 0.3, timeout = 600_000 } = opts;
   const { system, messages: apiMessages } = splitSystem(messages);
   const url = `${trimBaseUrl(conn.baseUrl)}/v1/messages`;
   const body: Record<string, unknown> = {
     model: conn.model,
     messages: apiMessages,
-    max_tokens: maxTokens,
+    max_tokens: 8192,
     temperature,
     stream: false,
   };
@@ -75,10 +100,7 @@ async function chatComplete(opts: ChatOpts): Promise<ChatResult> {
     .join('');
   return {
     content,
-    usage: {
-      promptTokens: json.usage?.input_tokens ?? 0,
-      completionTokens: json.usage?.output_tokens ?? 0,
-    },
+    usage: normalizeUsage(json.usage),
   };
 }
 

@@ -35,6 +35,9 @@ export async function checkLogin(): Promise<boolean> {
 
 // ---- 类型 ----
 
+/** 内置 NovAI 伪 Key：匿名绿灯调用的用量归集行，不可删除 */
+export const BUILTIN_NOVAI_KEY_ID = 'novai-greenlight';
+
 export interface ApiKeyItem {
   id: string;
   name: string;
@@ -48,9 +51,19 @@ export interface ApiKeyItem {
 export interface OverviewStats {
   total: number;
   activeKeys: number;
+  enabledKeys: number;
   totalKeys: number;
   byTool: { tool: string; count: number }[];
-  trend: { date: string; counts: Record<string, number> }[];
+  /** AI 用量与成本（全历史累计） */
+  ai: {
+    promptTokens: number;
+    completionTokens: number;
+    cacheHitTokens: number;
+    cost: number;
+  };
+  trend: { date: string; counts: Record<string, number>; cost: number }[];
+  /** 展示货币代码（用于金额符号） */
+  currency: string;
 }
 
 export interface KeyStats {
@@ -60,9 +73,53 @@ export interface KeyStats {
   trend: { date: string; counts: Record<string, number> }[];
 }
 
+export interface TopKeyItem {
+  keyId: string;
+  name: string;
+  count: number;
+}
+
+export interface TopKeysResp {
+  items: TopKeyItem[];
+}
+
+// ---- 任务系统 ----
+
+/** 任务并发配置（GET/PUT /settings/tasks） */
+export interface TaskSettings {
+  perKey: number;
+  global: number;
+  defaults?: { perKey: number; global: number };
+}
+
+/** Key 维度 AI 成本（GET /stats/ai-cost） */
+export interface AiCostItem {
+  keyId: string;
+  name: string;
+  requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  cost: number;
+}
+
+export interface AiCostResp {
+  currency: string;
+  items: AiCostItem[];
+}
+
 // ---- LLM Provider ----
 
 export type Protocol = 'openai' | 'openai-responses' | 'anthropic' | 'gemini';
+
+/** Provider 价格配置（单一货币，不含 currency 字段） */
+export interface ProviderPricing {
+  inputPerMTok: number;
+  outputPerMTok: number;
+  cacheHitEnabled: boolean;
+  cacheHitPerMTok: number;
+  cacheWriteEnabled: boolean;
+  cacheWritePerMTok: number;
+}
 
 export interface LlmProviderItem {
   id: string;
@@ -74,6 +131,7 @@ export interface LlmProviderItem {
   models: string[];
   enabled: boolean;
   isDefault: boolean;
+  pricing: ProviderPricing;
   createdAt: string;
   updatedAt: string;
 }

@@ -9,18 +9,22 @@ import { registerWebFetchRender } from './web-fetch-render.js';
 import { registerListModels } from './list-models.js';
 import { registerWebFetchAnswer } from './web-fetch-answer.js';
 import { registerWebSearchAnswer } from './web-search-answer.js';
+import { registerWebResearch } from './web-research.js';
+import { registerGetResult } from './get-result.js';
 
 /**
  * 在 McpServer 上注册所有工具。
  *
  * - web_fetch_render 依赖 browserless 容器，通过 BROWSER_FETCH_ENABLED 控制
- * - list_models / web_fetch_answer / web_search_answer 依赖 LLM Provider 配置，
+ * - list_models / web_fetch_answer / web_search_answer / web_research 依赖 LLM Provider 配置，
  *   仅在数据库中存在 enabled 的默认 Provider 时注册
+ * - get_result 服务于 defer 脱手与 web_research，总是注册
  */
 export async function registerTools(server: McpServer): Promise<void> {
   registerWebSearch(server);
   registerWebFetch(server);
   registerSearchAndFetch(server);
+  registerGetResult(server);
 
   if (config.BROWSER_FETCH_ENABLED) {
     registerWebFetchRender(server);
@@ -34,7 +38,8 @@ export async function registerTools(server: McpServer): Promise<void> {
     registerListModels(server);
     registerWebFetchAnswer(server);
     registerWebSearchAnswer(server);
-    logger.info({ provider: hasLlm.name }, 'AI 增强工具已注册（list_models / web_fetch_answer / web_search_answer）');
+    registerWebResearch(server);
+    logger.info({ provider: hasLlm.name }, 'AI 增强工具已注册（list_models / web_fetch_answer / web_search_answer / web_research）');
   } else {
     logger.info('AI 增强工具未注册（未配置 enabled 的默认 LLM Provider）');
   }

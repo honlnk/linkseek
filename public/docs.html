@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>linkseek · 自托管联网搜索 MCP 服务</title>
-  <meta name="description" content="linkseek 是一个开源自托管的远程 MCP 服务，为 AI 编程工具提供联网搜索 + 网页获取能力，配套网页端管理后台。" />
+  <meta name="description" content="linkseek 是一个开源自托管的远程 MCP 服务，为 AI 编程工具提供联网搜索 + 网页获取 + AI 问答增强能力，配套网页端管理后台。" />
   <link rel="icon" type="image/svg+xml" href="/assets/brand/logo-mark.svg" />
   <style>
     :root {
@@ -222,8 +222,8 @@
   <!-- Hero -->
   <div class="container hero">
     <span class="hero-badge">自托管 · 开源 · MCP 协议</span>
-    <h1>为 AI 编程工具装上<br/><span class="grad">联网搜索 + 网页获取</span></h1>
-    <p>linkseek 是一个开源自托管的远程 MCP 服务，通过 HTTP 为 Claude Code、Cursor 等 AI 工具提供「联网搜索」和「网页正文获取」能力，配套网页端管理后台。</p>
+    <h1>为 AI 编程工具装上<br/><span class="grad">联网搜索 + AI 问答与深度研究</span></h1>
+    <p>linkseek 是一个开源自托管的远程 MCP 服务，通过 HTTP 为 Claude Code、Cursor 等 AI 工具提供「联网搜索」「网页正文获取」「AI 搜索问答」和「深度研究」能力，慢工具支持异步脱手执行，内置多 LLM Provider，配套网页端管理后台。</p>
     <div class="hero-actions">
       <a href="#usage" class="btn btn-primary">开始使用</a>
       <a href="#deploy" class="btn btn-secondary">自部署</a>
@@ -235,29 +235,63 @@
   <section id="features">
     <div class="container">
       <p class="section-title">功能</p>
-      <h2>4 个 MCP 工具</h2>
-      <p class="section-desc">遵循 <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> 标准，兼容所有支持 MCP 的 AI 编程工具。</p>
+      <h2>9 个 MCP 工具</h2>
+      <p class="section-desc">遵循 <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> 标准，兼容所有支持 MCP 的 AI 编程工具。基础 4 个开箱即用；AI 问答增强 3 个与深度研究 1 个需在后台配置 LLM Provider 后自动启用；<code>get_result</code> 常驻，用于查询异步任务。</p>
 
+      <h3>搜索 / 抓取</h3>
       <div class="tool-grid">
         <div class="tool-card">
           <span class="tool-name">web_search</span>
-          <div class="tool-desc">联网搜索关键词，返回结构化结果（标题、URL、摘要）。</div>
-          <div class="tool-params">参数：<code>query</code> <code>maxResults</code> <code>timeRange</code> <code>language</code></div>
+          <div class="tool-desc">联网搜索关键词，返回结构化结果（标题、URL、摘要）。支持按分类、引擎、时间、语言过滤，结果按相关性 + 来源权威性排序，自动去重。</div>
+          <div class="tool-params">参数：<code>query</code> <code>maxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code></div>
         </div>
         <div class="tool-card">
           <span class="tool-name">web_fetch</span>
-          <div class="tool-desc">获取网页正文并转为 Markdown，自动去噪（去除导航/广告/页脚）。</div>
+          <div class="tool-desc">获取网页正文并转为 Markdown，自动去噪（去除导航/广告/页脚），内置 SSRF 防护。</div>
           <div class="tool-params">参数：<code>url</code></div>
         </div>
         <div class="tool-card">
           <span class="tool-name">web_search_and_fetch</span>
-          <div class="tool-desc">搜索 + 批量抓取正文一步到位，适合快速收集多个来源。</div>
-          <div class="tool-params">参数：<code>query</code> <code>fetchCount</code> <code>searchMaxResults</code></div>
+          <div class="tool-desc">搜索 + 批量抓取正文一步到位，并行获取前 N 个结果页面。遇到 403/429/SPA 空正文自动降级浏览器渲染。传 <code>defer: true</code> 可脱手异步执行。</div>
+          <div class="tool-params">参数：<code>query</code> <code>fetchCount</code> <code>searchMaxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code> <code>defer</code></div>
         </div>
         <div class="tool-card">
           <span class="tool-name">web_fetch_render</span>
-          <div class="tool-desc">无头浏览器渲染获取 JS 动态页面（SPA），再转 Markdown。</div>
-          <div class="tool-params">参数：<code>url</code></div>
+          <div class="tool-desc">无头浏览器（stealth 模式）渲染获取 JS 动态页面（SPA），再转 Markdown。可绕过基础 WAF / 反爬指纹拦截。渲染耗时较长，传 <code>defer: true</code> 可脱手异步执行。</div>
+          <div class="tool-params">参数：<code>url</code> <code>defer</code></div>
+        </div>
+      </div>
+
+      <h3>AI 问答增强 <span style="font-size:13px;font-weight:500;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:4px;">需配置 LLM Provider</span></h3>
+      <div class="tool-grid">
+        <div class="tool-card">
+          <span class="tool-name">web_search_answer</span>
+          <div class="tool-desc">一次调用完成「搜索 + 抓取 + AI 分析」。综合多个来源页面内容，针对你的问题给出精简回答并标注来源编号，自动追加引用 URL 列表。传 <code>defer: true</code> 可脱手异步执行。</div>
+          <div class="tool-params">参数：<code>query</code> <code>prompt</code> <code>model</code> <code>fetchCount</code> <code>searchMaxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code> <code>defer</code></div>
+        </div>
+        <div class="tool-card">
+          <span class="tool-name">web_fetch_answer</span>
+          <div class="tool-desc">获取指定 URL 正文，用 AI 针对你的问题直接给答案（而非返回原始 Markdown）。自动检测 WAF 挑战页并降级浏览器渲染。传 <code>defer: true</code> 可脱手异步执行。</div>
+          <div class="tool-params">参数：<code>url</code> <code>prompt</code> <code>model</code> <code>defer</code></div>
+        </div>
+        <div class="tool-card">
+          <span class="tool-name">list_models</span>
+          <div class="tool-desc">列出后台已启用的 AI 模型（Provider），含名称、协议、模型名。AI 工具可在 web_search_answer / web_fetch_answer 的 <code>model</code> 参数中切换。</div>
+          <div class="tool-params">参数：无</div>
+        </div>
+      </div>
+
+      <h3>异步任务 <span style="font-size:13px;font-weight:500;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:4px;">get_result 常驻 · web_research 需 LLM Provider</span></h3>
+      <div class="tool-grid">
+        <div class="tool-card">
+          <span class="tool-name">web_research</span>
+          <div class="tool-desc">深度研究一个中等复杂度的问题：服务端自主跑完整流水线——问题改写 → 多轮迭代搜索 → LLM 筛选来源 → 抓取正文（自动过 WAF）→ 长文分块蒸馏 → 充分性判断 → 综合回答（附来源列表）。纯异步：提交即返回 taskId，standard 档约 1-3 分钟。</div>
+          <div class="tool-params">参数：<code>question</code> <code>depth</code>(fast/standard/deep) <code>model</code></div>
+        </div>
+        <div class="tool-card">
+          <span class="tool-name">get_result</span>
+          <div class="tool-desc">查询异步任务的进度与结果：排队 / 执行中返回当前阶段进度（如「抓取中 2/5」），完成返回与同步版格式一致的内容。配合 <code>defer: true</code> 或 <code>web_research</code> 使用，结果保留 60 分钟。</div>
+          <div class="tool-params">参数：<code>taskId</code></div>
         </div>
       </div>
 
@@ -265,10 +299,14 @@
       <ul class="feature-list">
         <li><strong>Streamable HTTP 传输</strong> — 裸域名直接接入，远程访问，无需本地进程</li>
         <li><strong>API Key 鉴权</strong> — Bearer Token，每个 Key 独立计量、可启停</li>
+        <li><strong>SearXNG 元搜索</strong> — 聚合 200+ 搜索源，支持按分类 / 引擎 / 时间 / 语言过滤，内置语言检测 + 来源权威性重排序</li>
+        <li><strong>优先域名</strong> — <code>preferred_sites</code> 参数可指定优先参考的官网 / GitHub 仓库 / 文档站，命中域名及其子域自动提权</li>
+        <li><strong>智能抓取降级</strong> — HTTP 抓取遇 403/429/WAF 挑战页/SPA 空正文时，自动降级到 stealth 无头浏览器渲染</li>
+        <li><strong>多 LLM Provider</strong> — 后台可配置 OpenAI / Anthropic / Gemini 等，AI 增强工具自动启用，支持按工具切换模型</li>
+        <li><strong>异步任务</strong> — 慢工具传 <code>defer: true</code> 脱手执行，立即返回 taskId；<code>web_research</code> 深度研究流水线多轮自主调研；<code>get_result</code> 查进度取结果，每 Key / 全局并发后台可调（保存即生效）</li>
         <li><strong>SSRF 防护</strong> — IP 段拦截 + DNS rebinding 防护 + 重定向逐跳校验</li>
         <li><strong>HTML → Markdown</strong> — 正文提取 + 噪音去除，对大模型友好</li>
-        <li><strong>SearXNG 元搜索</strong> — 聚合 Google / Bing / DuckDuckGo 等多源结果</li>
-        <li><strong>管理后台</strong> — Key 管理 + 用量统计（按工具/时间分布）</li>
+        <li><strong>管理后台</strong> — Key 管理 + LLM Provider 管理 + 任务并发设置 + 用量与 AI 成本统计 Dashboard（token / 成本按 Key 聚合）</li>
       </ul>
     </div>
   </section>
@@ -335,12 +373,122 @@
           <tr><th>工具</th><th>必填</th><th>可选</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>web_search</code></td><td><code>query</code></td><td><code>maxResults</code> <code>timeRange</code>(day/month/year) <code>language</code></td></tr>
+          <tr><td><code>web_search</code></td><td><code>query</code></td><td><code>maxResults</code> <code>timeRange</code>(day/month/year) <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code></td></tr>
           <tr><td><code>web_fetch</code></td><td><code>url</code></td><td>—</td></tr>
-          <tr><td><code>web_search_and_fetch</code></td><td><code>query</code></td><td><code>fetchCount</code> <code>searchMaxResults</code> <code>timeRange</code> <code>language</code></td></tr>
-          <tr><td><code>web_fetch_render</code></td><td><code>url</code></td><td>—</td></tr>
+          <tr><td><code>web_search_and_fetch</code></td><td><code>query</code></td><td><code>fetchCount</code> <code>searchMaxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code> <code>defer</code></td></tr>
+          <tr><td><code>web_fetch_render</code></td><td><code>url</code></td><td><code>defer</code></td></tr>
+          <tr><td><code>web_search_answer</code></td><td><code>query</code></td><td><code>prompt</code> <code>model</code> <code>fetchCount</code> <code>searchMaxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code> <code>defer</code></td></tr>
+          <tr><td><code>web_fetch_answer</code></td><td><code>url</code> <code>prompt</code></td><td><code>model</code> <code>defer</code></td></tr>
+          <tr><td><code>list_models</code></td><td>—</td><td>—</td></tr>
+          <tr><td><code>web_research</code></td><td><code>question</code></td><td><code>depth</code>(fast/standard/deep) <code>model</code></td></tr>
+          <tr><td><code>get_result</code></td><td><code>taskId</code></td><td>—</td></tr>
         </tbody>
       </table>
+
+      <h4>参数说明</h4>
+      <table>
+        <thead>
+          <tr><th>参数</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>query</code></td><td>搜索关键词</td></tr>
+          <tr><td><code>url</code></td><td>目标网页 URL（仅 http/https）</td></tr>
+          <tr><td><code>prompt</code></td><td>想了解的问题。AI 工具会据此回答，而非返回原始正文</td></tr>
+          <tr><td><code>model</code></td><td>指定 AI 模型，传入 <code>list_models</code> 返回的 Provider 名称；不传用默认</td></tr>
+          <tr><td><code>defer</code></td><td>设为 <code>true</code> 脱手执行：立即返回 <code>taskId</code> 不阻塞等待，之后用 <code>get_result</code> 取结果（四个慢工具可用）</td></tr>
+          <tr><td><code>taskId</code></td><td>异步任务 ID（<code>task_</code> 开头），来自 <code>defer: true</code> 调用或 <code>web_research</code> 的返回</td></tr>
+          <tr><td><code>depth</code></td><td>研究深度：<code>fast</code>（1 轮搜索 3 来源，最快）/ <code>standard</code>（3 轮 5 来源，默认）/ <code>deep</code>（5 轮 8 来源，最全面）</td></tr>
+          <tr><td><code>categories</code></td><td>搜索分类（逗号分隔）。常用：<code>general</code> / <code>it</code> / <code>science</code> / <code>news</code> / <code>images</code></td></tr>
+          <tr><td><code>engines</code></td><td>指定搜索引擎（逗号分隔）。常用：<code>google</code> / <code>bing</code> / <code>ddg</code> / <code>wikipedia</code></td></tr>
+          <tr><td><code>preferred_sites</code></td><td>优先域名列表（数组，最多 10 个），如 <code>["github.com", "react.dev"]</code></td></tr>
+          <tr><td><code>maxResults</code></td><td>最大返回结果数（1-30，默认 10）</td></tr>
+          <tr><td><code>fetchCount</code></td><td>抓取前 N 个结果正文（1-10，默认 3）</td></tr>
+          <tr><td><code>searchMaxResults</code></td><td>搜索结果总数（1-30，默认 10）</td></tr>
+          <tr><td><code>timeRange</code></td><td>时间范围：<code>day</code> / <code>month</code> / <code>year</code></td></tr>
+          <tr><td><code>language</code></td><td>搜索语言偏好，如 <code>zh-CN</code> / <code>en</code> / <code>all</code>；不传则自动判断</td></tr>
+        </tbody>
+      </table>
+
+      <h3>启用 AI 问答增强（可选）</h3>
+      <p>前 4 个工具开箱即用。如果你还想让 AI 工具直接获得「搜索即问即答」能力，只需在后台配置一个 LLM Provider：</p>
+      <ol>
+        <li>登录管理后台，进入「<strong>LLM Providers</strong>」页面。</li>
+        <li>新建 Provider，选择协议（OpenAI / Anthropic / Gemini / OpenAI Responses），填入 API Key、模型名，勾选「启用」。可设其中一个为「默认」。</li>
+        <li>保存后，应用会自动注册 <code>web_search_answer</code>、<code>web_fetch_answer</code>、<code>list_models</code> 三个工具，AI 工具即可调用。</li>
+      </ol>
+      <div class="callout callout-info">
+        <strong>多模型按需切换：</strong>可配置多个 Provider（如同时接 OpenAI 和 Gemini）。AI 在调用 <code>web_search_answer</code> / <code>web_fetch_answer</code> 时可通过 <code>model</code> 参数指定使用哪个；不传则用默认 Provider。
+      </div>
+    </div>
+  </section>
+
+  <!-- Public REST API -->
+  <section id="rest-api">
+    <div class="container">
+      <p class="section-title">公开 REST API</p>
+      <h2>不走 MCP 的直接调用（/v1）</h2>
+      <p class="section-desc">为浏览器端应用（如 NovAI）准备的薄 REST 适配层，复用同一套搜索与抓取核心。只暴露搜索和抓取，AI 问答工具不在此开放。</p>
+
+      <table>
+        <thead>
+          <tr><th>端点</th><th>请求体</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>POST /v1/search</code></td><td><code>query</code> 必填；可选 <code>maxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferredSites</code></td><td>返回 <code>{ query, count, results[] }</code>；无结果时附 <code>hint</code> 诊断建议</td></tr>
+          <tr><td><code>POST /v1/fetch</code></td><td><code>url</code> 必填；可选 <code>render: "auto"</code></td><td>返回 <code>{ finalUrl, statusCode, content, truncated, renderedBy }</code>；<code>render:"auto"</code> 时普通抓取命中低质量判定（WAF 挑战页/极短/低文本密度）自动升级浏览器渲染，响应 <code>renderedBy</code> 为 <code>http</code> 或 <code>browser</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>两种鉴权方式</h3>
+      <ul>
+        <li><strong>API Key</strong>：<code>Authorization: Bearer &lt;key&gt;</code>，不限日配额，用量记后台 UsageLog；CORS 对所有 Origin 放行——浏览器应用（如 NovAI「linkseek 直连」档）从任意站点地址均可直连，填服务地址 + Key 即用。</li>
+        <li><strong>匿名绿灯</strong>：无 Key，要求浏览器 <code>Origin</code> 命中服务端白名单（<code>PUBLIC_API_ALLOWED_ORIGINS</code>，仅服务方为授权站点开启），按配额放行。配额键优先取 <code>X-NovAI-Client-Id</code> 请求头（NovAI 前端自动携带），缺失时按 IP。</li>
+      </ul>
+      <p>版本要求：直连需实例版本含 <code>/v1</code> 公开端点（2026-09-24 <code>07bba8f</code> 及之后）。</p>
+
+      <h3>限流与配额规则</h3>
+      <table>
+        <thead><tr><th>规则</th><th>默认值</th><th>环境变量</th></tr></thead>
+        <tbody>
+          <tr><td>匿名·每身份每日（加权）</td><td>50 次</td><td><code>PUBLIC_API_DAILY_LIMIT</code></td></tr>
+          <tr><td>匿名·每 IP 每日总闸（加权）</td><td>200 次</td><td><code>PUBLIC_API_IP_DAILY_LIMIT</code></td></tr>
+          <tr><td>匿名·浏览器渲染加权</td><td>计 2 次（普通请求计 1）</td><td><code>PUBLIC_API_RENDER_COST</code></td></tr>
+          <tr><td>匿名·突发限流</td><td>10 次/分钟/身份</td><td><code>PUBLIC_API_BURST_PER_MINUTE</code></td></tr>
+          <tr><td>Key·突发限流（不设日配额）</td><td>30 次/分钟/Key</td><td><code>PUBLIC_API_KEY_BURST_PER_MINUTE</code></td></tr>
+        </tbody>
+      </table>
+      <p>按服务器本地日期重置。超限返回 <code>429 QUOTA_EXCEEDED</code> / <code>429 RATE_LIMITED</code>，错误体为 <code>{ "error": { "code", "message" } }</code>。</p>
+
+      <h3>错误码速查</h3>
+      <table>
+        <thead><tr><th>HTTP</th><th>code</th><th>含义</th></tr></thead>
+        <tbody>
+          <tr><td>400</td><td><code>BAD_REQUEST</code></td><td>请求参数不合法</td></tr>
+          <tr><td>401</td><td><code>UNAUTHORIZED</code> / <code>ORIGIN_REQUIRED</code></td><td>Key 无效；或匿名请求缺少浏览器 Origin</td></tr>
+          <tr><td>403</td><td><code>ORIGIN_FORBIDDEN</code> / <code>FETCH_SSRF_BLOCKED</code></td><td>来源不在白名单；或目标 URL 命中 SSRF 防护</td></tr>
+          <tr><td>429</td><td><code>QUOTA_EXCEEDED</code> / <code>RATE_LIMITED</code></td><td>日配额用尽 / 突发限流</td></tr>
+          <tr><td>502</td><td><code>SEARCH_FAILED</code> / <code>FETCH_FAILED</code></td><td>上游失败（响应含 <code>kind</code>、<code>upstreamStatus</code> 细节）</td></tr>
+          <tr><td>503</td><td><code>GREENLIGHT_UNAVAILABLE</code></td><td>服务端未配置数据库，匿名通道关闭</td></tr>
+        </tbody>
+      </table>
+
+      <h3>curl 示例</h3>
+      <pre><code># API Key 方式
+curl https://linkseek.honlnk.com/v1/search \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Node.js LTS 版本", "maxResults": 5}'
+
+# 匿名绿灯（浏览器场景；curl 模拟需自带白名单内的 Origin）
+curl https://linkseek.honlnk.com/v1/fetch \
+  -H "Content-Type: application/json" \
+  -H "Origin: https://novai.example.com" \
+  -H "X-NovAI-Client-Id: 550e8400-e29b-41d4-a716-446655440000" \
+  -d '{"url": "https://example.com", "render": "auto"}'</code></pre>
+
+      <div class="callout callout-warn">
+        <strong>部署红线：</strong>开放匿名绿灯前，确认 browserless 容器网络已隔离（不通内网、不可达云元数据端点）——渲染路径的 SSRF 防护弱于普通抓取（DNS 由容器解析），容器网络隔离是兜底。
+      </div>
     </div>
   </section>
 
@@ -355,9 +503,9 @@
         <strong>架构一览：</strong>
         <span class="mono" style="font-size: 13px; display: block; margin-top: 8px; line-height: 1.8;">
           公网 :443 → Nginx (HTTPS) → linkseek-app:7300 (Node)<br/>
-          &nbsp;&nbsp;&nbsp;&nbsp;├── MySQL（Key 存储 + 用量记录）<br/>
+          &nbsp;&nbsp;&nbsp;&nbsp;├── MySQL（Key / 用量 / LLM Provider 存储）<br/>
           &nbsp;&nbsp;&nbsp;&nbsp;├── SearXNG（元搜索后端）<br/>
-          &nbsp;&nbsp;&nbsp;&nbsp;└── Browserless（无头浏览器，web_fetch_render 用）
+          &nbsp;&nbsp;&nbsp;&nbsp;└── Browserless（无头浏览器，web_fetch_render / 降级渲染用）
         </span>
       </div>
 
@@ -478,7 +626,7 @@ docker compose -f docker-compose.prod.yml down</code></pre>
         &nbsp;·&nbsp;
         <a href="https://github.com/honlnk/linkseek/issues" target="_blank" rel="noopener">问题反馈</a>
       </p>
-      <p style="margin-top: 12px; font-size: 13px;">linkseek · 开源 MCP 服务 · 自托管优先</p>
+      <p style="margin-top: 12px; font-size: 13px;">linkseek · 联网搜索 + AI 问答增强 · 开源自托管 MCP 服务</p>
     </div>
   </footer>
 </body>

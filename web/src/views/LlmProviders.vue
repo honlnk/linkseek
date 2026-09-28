@@ -9,16 +9,18 @@ import {
   NForm,
   NFormItem,
   NInput,
+  NInputNumber,
   NSelect,
   NTag,
   NPopconfirm,
   NSwitch,
   NAlert,
   NEmpty,
+  NDivider,
   useMessage,
   type DataTableColumns,
 } from 'naive-ui';
-import { api, type LlmProviderItem, type LlmProviderList, type Protocol } from '../api.js';
+import { api, type LlmProviderItem, type LlmProviderList, type Protocol, type ProviderPricing } from '../api.js';
 
 const message = useMessage();
 
@@ -52,18 +54,34 @@ const protocolColors: Record<Protocol, string> = {
 const showForm = ref(false);
 const isEdit = ref(false);
 const editingId = ref('');
+
+/** 价格配置默认值（全 0，依赖 normalizePricing 兜底；用户填或查价后覆盖） */
+function defaultPricing(): ProviderPricing {
+  return {
+    inputPerMTok: 0,
+    outputPerMTok: 0,
+    cacheHitEnabled: true,
+    cacheHitPerMTok: 0,
+    cacheWriteEnabled: false,
+    cacheWritePerMTok: 0,
+  };
+}
+
 const form = ref({
   name: '',
   protocol: 'openai' as Protocol,
   baseUrl: 'https://api.openai.com/v1',
   apiKey: '',
   model: '',
+  ...defaultPricing(),
 });
 const saving = ref(false);
 
 // 模型列表
 const modelOptions = ref<string[]>([]);
 const fetchingModels = ref(false);
+// 查价 loading
+const pricingLoading = ref(false);
 
 async function loadProviders() {
   loading.value = true;
@@ -87,6 +105,7 @@ function openCreate() {
     baseUrl: 'https://api.openai.com/v1',
     apiKey: '',
     model: '',
+    ...defaultPricing(),
   };
   modelOptions.value = [];
   showForm.value = true;
@@ -101,6 +120,7 @@ function openEdit(row: LlmProviderItem) {
     baseUrl: row.baseUrl,
     apiKey: '', // 编辑时留空 = 不改
     model: row.model,
+    ...row.pricing,
   };
   modelOptions.value = row.models;
   showForm.value = true;
@@ -154,6 +174,38 @@ async function handleFetchModels() {
   }
 }
 
+/** 从 OpenRouter 查询模型参考价并填入表单（查不到静默跳过） */
+async function handleFetchPricing() {
+  if (!form.value.model.trim()) {
+    message.warning('请先填写或选择模型');
+    return;
+  }
+  pricingLoading.value = true;
+  try {
+    const resp = await api<{ found?: boolean; pricing?: Partial<ProviderPricing> & { hasCacheHit?: boolean; hasCacheWrite?: boolean }; currency?: string }>(`/pricing/${encodeURIComponent(form.value.model.trim())}`);
+    if (!resp.found || !resp.pricing) {
+      message.info('OpenRouter 未查到该模型价格，请手动填写');
+      return;
+    }
+    const p = resp.pricing;
+    if (typeof p.inputPerMTok === 'number') form.value.inputPerMTok = p.inputPerMTok;
+    if (typeof p.outputPerMTok === 'number') form.value.outputPerMTok = p.outputPerMTok;
+    if (p.hasCacheHit) {
+      form.value.cacheHitEnabled = true;
+      if (typeof p.cacheHitPerMTok === 'number') form.value.cacheHitPerMTok = p.cacheHitPerMTok;
+    }
+    if (p.hasCacheWrite) {
+      form.value.cacheWriteEnabled = true;
+      if (typeof p.cacheWritePerMTok === 'number') form.value.cacheWritePerMTok = p.cacheWritePerMTok;
+    }
+    message.success(`已填入参考价（${resp.currency ?? 'USD'}，来自 OpenRouter）`);
+  } catch (err) {
+    message.error((err as Error).message);
+  } finally {
+    pricingLoading.value = false;
+  }
+}
+
 async function handleSave() {
   if (!form.value.name.trim()) {
     message.warning('请输入名称');
@@ -174,12 +226,22 @@ async function handleSave() {
 
   saving.value = true;
   try {
+    // 组装价格配置
+    const pricing: ProviderPricing = {
+      inputPerMTok: form.value.inputPerMTok,
+      outputPerMTok: form.value.outputPerMTok,
+      cacheHitEnabled: form.value.cacheHitEnabled,
+      cacheHitPerMTok: form.value.cacheHitPerMTok,
+      cacheWriteEnabled: form.value.cacheWriteEnabled,
+      cacheWritePerMTok: form.value.cacheWritePerMTok,
+    };
     if (isEdit.value) {
       const body: Record<string, unknown> = {
         name: form.value.name,
         protocol: form.value.protocol,
         baseUrl: form.value.baseUrl,
         model: form.value.model,
+        pricing,
       };
       if (form.value.apiKey.trim()) body.apiKey = form.value.apiKey;
       await api(`/llm-providers/${editingId.value}`, {
@@ -196,6 +258,7 @@ async function handleSave() {
           baseUrl: form.value.baseUrl,
           apiKey: form.value.apiKey,
           model: form.value.model,
+          pricing,
         }),
       });
       message.success('已创建');
@@ -376,6 +439,37 @@ onMounted(loadProviders);
             </NButton>
           </NSpace>
         </NFormItem>
+
+        <NDivider style="margin: 12px 0">价格配置（用于成本统计，单位：/百万 token）</NDivider>
+        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px">
+          <NButton size="small" :loading="pricingLoading" :disabled="!form.model.trim()" @click="handleFetchPricing">
+            从 OpenRouter 查价
+          </NButton>
+          <span style="font-size: 12px; color: #999">参考价，请按实际核对</span>
+        </div>
+        <div style="display: flex; gap: 16px">
+          <NFormItem label="输入（未命中）单价" style="flex: 1">
+            <NInputNumber v-model:value="form.inputPerMTok" :precision="4" :step="0.01" :min="0" style="width: 100%" />
+          </NFormItem>
+          <NFormItem label="输出单价" style="flex: 1">
+            <NInputNumber v-model:value="form.outputPerMTok" :precision="4" :step="0.01" :min="0" style="width: 100%" />
+          </NFormItem>
+        </div>
+        <NFormItem label="启用缓存命中价格">
+          <NSwitch v-model:value="form.cacheHitEnabled" />
+          <span style="margin-left: 8px; font-size: 12px; color: #999">多数 Provider 支持命中按低价计费</span>
+        </NFormItem>
+        <NFormItem v-if="form.cacheHitEnabled" label="缓存命中单价">
+          <NInputNumber v-model:value="form.cacheHitPerMTok" :precision="4" :step="0.001" :min="0" style="width: 100%" />
+        </NFormItem>
+        <NFormItem label="启用缓存写入价格">
+          <NSwitch v-model:value="form.cacheWriteEnabled" />
+          <span style="margin-left: 8px; font-size: 12px; color: #999">仅 Anthropic 等少数模型</span>
+        </NFormItem>
+        <NFormItem v-if="form.cacheWriteEnabled" label="缓存写入单价">
+          <NInputNumber v-model:value="form.cacheWritePerMTok" :precision="4" :step="0.01" :min="0" style="width: 100%" />
+        </NFormItem>
+
         <NAlert v-if="modelOptions.length > 0" type="info" :show-icon="false" style="margin-top: 8px">
           可用模型（共 {{ modelOptions.length }} 个）：{{ modelOptions.slice(0, 10).join(', ') }}{{ modelOptions.length > 10 ? '...' : '' }}
         </NAlert>

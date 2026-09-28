@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { requireAdmin } from '../auth/session.js';
 import { generateApiKey } from '../auth/key-store.js';
 import { logger } from '../utils/logger.js';
+import { BUILTIN_NOVAI_KEY_ID } from '../lib/builtin-keys.js';
 
 export function createKeyRouter(): Router {
   const router = Router();
@@ -81,7 +82,7 @@ export function createKeyRouter(): Router {
     });
   });
 
-  /** PATCH /api/keys/:id —— 启停 Key */
+  /** PATCH /api/keys/:id —— 启停 Key。内置 NovAI Key 的启停即匿名绿灯总闸 */
   router.patch('/:id', async (req, res) => {
     const { enabled } = req.body as { enabled?: boolean };
     if (typeof enabled !== 'boolean') {
@@ -105,6 +106,11 @@ export function createKeyRouter(): Router {
 
   /** DELETE /api/keys/:id —— 删除 Key（关联的用量记录级联删除） */
   router.delete('/:id', async (req, res) => {
+    if (req.params.id === BUILTIN_NOVAI_KEY_ID) {
+      res.status(403).json({ error: '内置 NovAI 用量 Key 不允许删除' });
+      return;
+    }
+
     const key = await prisma.apiKey.delete({
       where: { id: req.params.id },
       select: { id: true, name: true },

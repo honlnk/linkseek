@@ -8,6 +8,8 @@ import { prisma } from '../lib/prisma.js';
 import type { Protocol, ConnectionConfig } from './types.js';
 import { getAdapter } from './index.js';
 import { logger } from '../utils/logger.js';
+import type { ProviderPricing } from '../utils/cost.js';
+import { FALLBACK_INPUT_PER_MTOK, FALLBACK_OUTPUT_PER_MTOK } from '../utils/cost.js';
 
 /** Provider 完整配置（含明文 apiKey，仅供后端调用 LLM 用） */
 export interface ProviderConfig {
@@ -20,6 +22,8 @@ export interface ProviderConfig {
   models: string[];
   enabled: boolean;
   isDefault: boolean;
+  /** 价格配置（用于成本计算） */
+  pricing: ProviderPricing;
 }
 
 /** Provider 列表项（apiKey 掩码，供 API 返回前端用） */
@@ -33,6 +37,7 @@ export interface ProviderListItem {
   models: string[];
   enabled: boolean;
   isDefault: boolean;
+  pricing: ProviderPricing;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,6 +52,53 @@ export interface ProviderInput {
   models?: string[];
   enabled?: boolean;
   isDefault?: boolean;
+  pricing?: Partial<ProviderPricing>;
+}
+
+/**
+ * 归一化价格配置：补全缺失字段。
+ * - input 缺失 → 兜底 0.27；output 缺失 → 兜底 1.1
+ * - cacheHit 缺失 → 取输入单价的 1/4（DeepSeek 经验值）
+ * - cacheWrite 缺失 → 0（默认关闭，需用户显式开启）
+ * - 开关：cacheHitEnabled 默认 true，cacheWriteEnabled 默认 false
+ */
+export function normalizePricing(p?: Partial<ProviderPricing> | null): ProviderPricing {
+  const input = Number(p?.inputPerMTok);
+  const inputPerMTok = Number.isFinite(input) && input >= 0 ? input : FALLBACK_INPUT_PER_MTOK;
+
+  const output = Number(p?.outputPerMTok);
+  const outputPerMTok = Number.isFinite(output) && output >= 0 ? output : FALLBACK_OUTPUT_PER_MTOK;
+
+  const cacheHit = Number(p?.cacheHitPerMTok);
+  const cacheHitPerMTok =
+    Number.isFinite(cacheHit) && cacheHit >= 0 ? cacheHit : round4(inputPerMTok * 0.25);
+
+  const cacheWrite = Number(p?.cacheWritePerMTok);
+  const cacheWritePerMTok = Number.isFinite(cacheWrite) && cacheWrite >= 0 ? cacheWrite : 0;
+
+  return {
+    inputPerMTok,
+    outputPerMTok,
+    cacheHitEnabled: p?.cacheHitEnabled ?? true,
+    cacheHitPerMTok,
+    cacheWriteEnabled: p?.cacheWriteEnabled ?? false,
+    cacheWritePerMTok,
+  };
+}
+
+/** 保留 4 位小数（单价展示用） */
+function round4(n: number): number {
+  return Math.round(n * 10000) / 10000;
+}
+
+/** 解析 pricing JSON 列（容错：解析失败返回归一化兜底） */
+function parsePricing(raw: string | null | undefined): ProviderPricing {
+  if (!raw) return normalizePricing(null);
+  try {
+    return normalizePricing(JSON.parse(raw) as Partial<ProviderPricing>);
+  } catch {
+    return normalizePricing(null);
+  }
 }
 
 /** 掩码 apiKey：保留最后 4 位 */
@@ -55,7 +107,7 @@ function maskApiKey(key: string): string {
   return `***${key.slice(-4)}`;
 }
 
-/** Prisma 记录 → ProviderConfig（含解析 models JSON） */
+/** Prisma 记录 → ProviderConfig（含解析 models / pricing JSON） */
 function toConfig(row: {
   id: string;
   name: string;
@@ -66,6 +118,7 @@ function toConfig(row: {
   models: string;
   enabled: boolean;
   isDefault: boolean;
+  pricing?: string | null;
 }): ProviderConfig {
   let models: string[] = [];
   try {
@@ -74,9 +127,16 @@ function toConfig(row: {
     models = [];
   }
   return {
-    ...row,
+    id: row.id,
+    name: row.name,
     protocol: row.protocol as Protocol,
+    baseUrl: row.baseUrl,
+    apiKey: row.apiKey,
+    model: row.model,
     models,
+    enabled: row.enabled,
+    isDefault: row.isDefault,
+    pricing: parsePricing(row.pricing),
   };
 }
 
@@ -91,6 +151,7 @@ function toListItem(row: {
   models: string;
   enabled: boolean;
   isDefault: boolean;
+  pricing?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): ProviderListItem {
@@ -110,6 +171,7 @@ function toListItem(row: {
     models,
     enabled: row.enabled,
     isDefault: row.isDefault,
+    pricing: parsePricing(row.pricing),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -217,6 +279,7 @@ export async function createProvider(data: Required<Pick<ProviderInput, 'name' |
       models: JSON.stringify(data.models ?? []),
       enabled: data.enabled ?? true,
       isDefault: data.isDefault ?? isFirst,
+      pricing: JSON.stringify(normalizePricing(data.pricing)),
     },
   });
 
@@ -239,6 +302,15 @@ export async function updateProvider(id: string, data: ProviderInput): Promise<P
   }
   if (data.models !== undefined) {
     updateData.models = JSON.stringify(data.models);
+  }
+  if (data.pricing !== undefined) {
+    // 合并旧 pricing 后归一化，支持部分更新
+    const row = await prisma.llmProvider.findUnique({ where: { id }, select: { pricing: true } });
+    const merged = normalizePricing({
+      ...parsePricing(row?.pricing ?? null),
+      ...data.pricing,
+    });
+    updateData.pricing = JSON.stringify(merged);
   }
 
   // 设为默认：先取消其他默认

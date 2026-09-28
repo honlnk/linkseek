@@ -1,0 +1,114 @@
+# 版本发布流水线：push v* tag → 校验 → 类型检查 → 构建推 Docker Hub → 服务器发布
+#
+# 发布方式（日常唯一入口）：
+#   1. dev 合入 main，bump package.json 的 version
+#   2. 打 tag 并推送：git tag v0.2.0 && git push origin v0.2.0
+#   3. 本流水线全自动：镜像推 <版本> + latest 双 tag，服务器健康检查失败自动回滚旧版本
+#
+# 手动部署/回滚任意历史版本用 deploy.yml（workflow_dispatch）。
+# 需要的 secrets：DOCKERHUB_USERNAME / DOCKERHUB_TOKEN / VOLCANO_HOST / VOLCANO_USER / VOLCANO_SSH_KEY
+# （详见 docs/部署指南.md「版本发布（CI/CD）」章节）
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: 版本与归属校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tag 在 main 上的祖先校验需要历史
+      - name: 校验 tag
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "✗ tag 非语义化版本：$VERSION（应为 v0.2.0 形态）"; exit 1; }
+          PKG_VERSION=$(jq -r .version package.json)
+          [ "$VERSION" = "$PKG_VERSION" ] \
+            || { echo "✗ tag v$VERSION 与 package.json version $PKG_VERSION 不一致，先 bump 再打 tag"; exit 1; }
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "✗ tag 不在 main 分支上（只在 main 上打发布 tag）"; exit 1; }
+          echo "✓ v$VERSION 校验通过"
+
+  check:
+    name: 类型检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # 从 package.json 的 packageManager 字段取版本
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate # typecheck 依赖 Prisma 生成类型
+      - run: pnpm typecheck
+
+  build:
+    name: 构建并推 Docker Hub
+    needs: [validate, check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: honlnk/linkseek
+          # v0.2.0 → 0.2.0（部署用，服务器永不部署 latest）+ latest（仅供开源用户 pull）
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64 # 服务器 x86_64；arm64 有真实需求再加 QEMU 矩阵
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: 发布到生产
+    needs: [validate, check, build]
+    runs-on: ubuntu-latest
+    env:
+      SSH_TARGET: ${{ secrets.VOLCANO_USER }}@${{ secrets.VOLCANO_HOST }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 装配 ssh 密钥
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.VOLCANO_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.VOLCANO_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+      - name: 同步部署文件
+        run: |
+          rsync -av docker-compose.prod.yml deploy/deploy-release.sh "$SSH_TARGET":/home/honlnk/linkseek/
+          rsync -av deploy/nginx/                "$SSH_TARGET":/home/honlnk/linkseek/nginx/
+          rsync -av searxng/                     "$SSH_TARGET":/home/honlnk/linkseek/searxng/
+      - name: 执行发布脚本
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # 凭据/版本须在 runner 侧展开后随命令传入服务器（非服务器本地变量），故豁免 SC2029
+          # shellcheck disable=SC2029
+          ssh "$SSH_TARGET" \
+            "cd /home/honlnk/linkseek && APP_VERSION='$VERSION' DOCKERHUB_USERNAME='$DOCKERHUB_USERNAME' DOCKERHUB_TOKEN='$DOCKERHUB_TOKEN' sh ./deploy-release.sh"

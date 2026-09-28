@@ -1,47 +1,311 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
-import { NCard, NGrid, NGridItem, NStatistic, NSpace, NEmpty, NSpin } from 'naive-ui';
-import { api, type OverviewStats } from '../api.js';
+import { ref, computed, onMounted, watch, h } from 'vue';
+import { NCard, NGrid, NGridItem, NStatistic, NSpace, NEmpty, NSpin, NRadioGroup, NRadioButton, NDataTable } from 'naive-ui';
+import type { DataTableColumns } from 'naive-ui';
+import type { EChartsOption } from 'echarts';
+import EChart from '../components/EChart.vue';
+import { toolColor } from '../shared.js';
+import { api, type OverviewStats, type TopKeysResp, type AiCostResp, type AiCostItem } from '../api.js';
+
+/** 趋势时间范围选择 */
+type RangeKey = 'today' | 'week' | 'd14' | 'd30';
+
+/** 货币代码 → 符号 */
+const currencySymbols: Record<string, string> = { CNY: '¥', USD: '$', EUR: '€' };
+function currencySymbol(code: string): string {
+  return currencySymbols[code] ?? code + ' ';
+}
+
+/** 金额格式化：保留 4 位小数（成本通常很小） */
+function formatCost(n: number): string {
+  return n.toFixed(4);
+}
+
+/** token 千分位格式化 */
+function formatTokens(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
+/**
+ * 把范围 key 映射成后端的 days 参数（后端按 UTC 分桶）。
+ * - today：1（当天，配合 bucket=hour 按小时展示）
+ * - week：本周一至今的天数（周一=1…周日=7），配合 bucket=hour 按小时展示
+ * - d14 / d30：直接传天数，按日展示
+ */
+function rangeToDays(key: RangeKey): number {
+  if (key === 'today') return 1;
+  if (key === 'd14') return 14;
+  if (key === 'd30') return 30;
+  // week：计算本周一至今经过的天数（含今天）
+  const now = new Date();
+  const dayOfWeek = now.getDay() === 0 ? 7 : now.getDay(); // 周日 0 → 7
+  return Math.max(1, dayOfWeek);
+}
+
+/** 当天/本周用小时分桶（细粒度），近14/30天用日分桶 */
+function rangeToBucket(key: RangeKey): 'hour' | 'day' {
+  return key === 'today' || key === 'week' ? 'hour' : 'day';
+}
+
+const range = ref<RangeKey>('d14');
+const days = computed(() => rangeToDays(range.value));
+const bucket = computed(() => rangeToBucket(range.value));
 
 const stats = ref<OverviewStats | null>(null);
+const topKeys = ref<TopKeysResp | null>(null);
+const aiCost = ref<AiCostResp | null>(null);
 const loading = ref(true);
 
-const maxTrendCount = computed(() => {
-  if (!stats.value) return 1;
-  return Math.max(
-    1,
-    ...stats.value.trend.map((t) =>
-      Object.values(t.counts).reduce((a, b) => a + b, 0),
-    ),
+/**
+ * 日均请求：选定时间窗口内的总请求 ÷ 天数。
+ * 分子用 trend 各桶 count 之和（仅统计选中范围），分母用 days（不随分桶粒度变化）。
+ * 避免旧实现把全历史 total 除以分桶数（小时桶时分母变成 24）的问题。
+ */
+const dailyAvg = computed(() => {
+  const trend = stats.value?.trend ?? [];
+  const rangeTotal = trend.reduce(
+    (sum, d) => sum + Object.values(d.counts).reduce((s, c) => s + c, 0),
+    0,
   );
+  const d = days.value;
+  return d > 0 ? Math.round(rangeTotal / d) : 0;
 });
-
-const toolColors: Record<string, string> = {
-  web_search: '#2080f0',
-  web_fetch: '#18a058',
-  web_search_and_fetch: '#f0a020',
-  web_fetch_render: '#d03050',
-  list_models: '#8a2be2',
-  web_fetch_answer: '#36ad6a',
-  web_search_answer: '#ff9d3d',
-};
 
 async function load() {
   loading.value = true;
   try {
-    stats.value = await api<OverviewStats>('/stats/overview?days=14');
+    const [overview, top, cost] = await Promise.all([
+      api<OverviewStats>(`/stats/overview?days=${days.value}&bucket=${bucket.value}`),
+      api<TopKeysResp>(`/stats/top-keys?days=${days.value}&limit=10`),
+      api<AiCostResp>(`/stats/ai-cost?days=${days.value}`),
+    ]);
+    stats.value = overview;
+    topKeys.value = top;
+    aiCost.value = cost;
   } finally {
     loading.value = false;
   }
 }
 
+// 切换时间范围时重新拉取
+watch(range, load);
 onMounted(load);
+
+// ---- 工具分布饼图 ----
+const pieOption = computed<EChartsOption>(() => {
+  const raw = stats.value?.byTool ?? [];
+  const total = raw.reduce((a, b) => a + b.count, 0);
+  // 占比 < 8% 的扇区不显示标签（交给右侧列表），通过每项自带 label 配置控制
+  const data = raw.map((t) => ({
+    name: t.tool,
+    value: t.count,
+    itemStyle: { color: toolColor(t.tool) },
+    label: total > 0 && t.count / total >= 0.08 ? { show: true, formatter: '{b}', fontSize: 12 } : { show: false },
+  }));
+
+  return {
+    tooltip: {
+      trigger: 'item',
+      formatter: (p: unknown) => {
+        const param = p as { name: string; value: number; percent: number };
+        return `${param.name}<br/>次数：${param.value}<br/>占比：${param.percent}%`;
+      },
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: ['42%', '70%'],
+        center: ['50%', '50%'],
+        avoidLabelOverlap: true,
+        labelLine: { show: true, length: 8, length2: 8 },
+        emphasis: {
+          label: { show: true, fontWeight: 'bold', fontSize: 13 },
+          itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.15)' },
+        },
+        labelLayout: { hideOverlap: true },
+        data,
+      },
+    ],
+    graphic: total === 0
+      ? { type: 'text', left: 'center', top: 'middle', style: { text: '暂无数据', fontSize: 14, fill: '#999' } }
+      : undefined,
+  };
+});
+
+/** 右侧列表：按调用次数降序 */
+const toolList = computed(() => {
+  const items = stats.value?.byTool ?? [];
+  const total = items.reduce((a, b) => a + b.count, 0);
+  return items
+    .map((t) => ({
+      tool: t.tool,
+      count: t.count,
+      percent: total > 0 ? (t.count / total) * 100 : 0,
+      color: toolColor(t.tool),
+    }))
+    .sort((a, b) => b.count - a.count);
+});
+
+// ---- Key AI 成本表（时间范围与上方趋势一致） ----
+const aiCostColumns = computed<DataTableColumns<AiCostItem>>(() => [
+  { title: 'Key', key: 'name', minWidth: 140, ellipsis: { tooltip: true } },
+  { title: 'AI 请求数', key: 'requests', width: 110, align: 'right' },
+  {
+    title: '输入 Token',
+    key: 'promptTokens',
+    width: 130,
+    align: 'right',
+    render: (row) => formatTokens(row.promptTokens),
+  },
+  {
+    title: '输出 Token',
+    key: 'completionTokens',
+    width: 130,
+    align: 'right',
+    render: (row) => formatTokens(row.completionTokens),
+  },
+  {
+    title: () => `成本（${currencySymbol(stats.value?.currency ?? 'CNY')}）`,
+    key: 'cost',
+    width: 120,
+    align: 'right',
+    render: (row) => formatCost(row.cost),
+  },
+]);
+
+// ---- 请求趋势平滑折线图 ----
+/**
+ * 收集趋势中出现的所有工具名（保持稳定顺序：按工具色表已知顺序优先）。
+ */
+const trendTools = computed(() => {
+  const set = new Set<string>();
+  for (const day of stats.value?.trend ?? []) {
+    for (const tool of Object.keys(day.counts)) set.add(tool);
+  }
+  return [...set];
+});
+
+const trendOption = computed<EChartsOption>(() => {
+  const trend = stats.value?.trend ?? [];
+  const isHour = bucket.value === 'hour';
+
+  // X 轴标签格式化：
+  // - 小时桶 + 当天：HH:00（如 14:00）
+  // - 小时桶 + 本周：MM/DD HH:00（如 08/05 14:00），点数多时省略年份
+  // - 日桶：MM-DD（如 08-05）
+  const fmtLabel = (raw: string) => {
+    if (!isHour) return raw.slice(5); // 日桶：YYYY-MM-DD → MM-DD
+    // 小时桶格式 YYYY-MM-DDTHH:00
+    if (range.value === 'today') return raw.slice(11, 16); // HH:00
+    return `${raw.slice(5, 10)} ${raw.slice(11, 16)}`; // MM-DD HH:00
+  };
+  const labels = trend.map((d) => fmtLabel(d.date));
+  const pointCount = labels.length;
+
+  // 稀疏策略：避免标签拥挤。
+  // 目标约 8-12 个可见刻度 → interval ≈ ceil(pointCount / 10)
+  const interval = Math.max(0, Math.ceil(pointCount / 10) - 1);
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      // 小时桶时在 tooltip 里显示完整日期时间
+      formatter: (params: unknown) => {
+        const arr = params as { axisValue: string; dataIndex: number; seriesName: string; value: number; marker: string }[];
+        if (!arr.length) return '';
+        const header = isHour && range.value === 'week'
+          ? trend[arr[0]?.dataIndex ?? 0]?.date?.replace('T', ' ').slice(0, 16) ?? arr[0].axisValue
+          : arr[0].axisValue;
+        const lines = arr
+          .filter((p) => p.value > 0)
+          .map((p) => `${p.marker} ${p.seriesName}：${p.value}`);
+        return `${header}<br/>${lines.join('<br/>')}`;
+      },
+    },
+    legend: {
+      top: 0,
+      type: 'scroll',
+      data: trendTools.value,
+    },
+    grid: { left: 40, right: 16, top: 36, bottom: 28, containLabel: true },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: labels,
+      axisLabel: { interval, fontSize: 11 },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1, // 请求数只能整数
+      splitNumber: 4,
+    },
+    series: trendTools.value.map((tool) => ({
+      name: tool,
+      type: 'line',
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 5,
+      // 点数多时隐藏数据点，只保留曲线轮廓
+      showSymbol: pointCount <= 24,
+      itemStyle: { color: toolColor(tool) },
+      lineStyle: { width: 2 },
+      areaStyle: { opacity: 0.08 },
+      data: trend.map((d) => d.counts[tool] ?? 0),
+    })),
+  };
+});
+
+// ---- Key 调用次数排名横向柱状图 ----
+/**
+ * ECharts 横向柱状图：yAxis 为 category（从上到下）。
+ * 数据需逆序传入（最小的在数组最前），这样排名第一显示在最上方。
+ * xAxis.max 设为最大值，让第一名占满全宽，其余按比例。
+ */
+const topKeysOption = computed<EChartsOption>(() => {
+  const items = topKeys.value?.items ?? [];
+  const maxCount = items.length > 0 ? items[0].count : 1;
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+    },
+    grid: { left: 8, right: 48, top: 8, bottom: 8, containLabel: true },
+    xAxis: {
+      type: 'value',
+      max: Math.max(maxCount, 1), // 第一名占满全宽；全 0 时避免 0 导致除错
+      axisLabel: { show: false },
+      splitLine: { show: false },
+    },
+    yAxis: {
+      type: 'category',
+      // 逆序：ECharts 默认从下往上画，逆序后第一名在最上
+      data: [...items].reverse().map((i) => i.name),
+      axisLine: { show: false },
+      axisTick: { show: false },
+    },
+    series: [
+      {
+        type: 'bar',
+        barMaxWidth: 22,
+        itemStyle: { borderRadius: [0, 4, 4, 0], color: '#2080f0' },
+        label: {
+          show: true,
+          position: 'right',
+          formatter: (p: unknown) => String((p as { value?: number }).value ?? 0),
+          fontSize: 12,
+        },
+        data: [...items].reverse().map((i) => i.count),
+      },
+    ],
+  };
+});
 </script>
 
 <template>
   <NSpin :show="loading">
     <NSpace vertical :size="16" v-if="stats">
-      <!-- 数据卡片 -->
+      <!-- 数据卡片（保持不动） -->
       <NGrid :cols="4" :x-gap="16" responsive="screen" item-responsive>
         <NGridItem span="4 m:2 l:1">
           <NCard>
@@ -55,122 +319,164 @@ onMounted(load);
         </NGridItem>
         <NGridItem span="4 m:2 l:1">
           <NCard>
-            <NStatistic label="Key 总数" :value="stats.totalKeys" />
+            <NStatistic label="Key 总数">
+              <template #default>
+                <span style="font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums;">
+                  {{ stats.totalKeys }}<span style="color: #999; font-weight: 400;"> / {{ stats.enabledKeys }}</span>
+                </span>
+              </template>
+              <template #suffix>
+                <span style="font-size: 12px; color: #999;">总数 / 已启用</span>
+              </template>
+            </NStatistic>
           </NCard>
         </NGridItem>
         <NGridItem span="4 m:2 l:1">
           <NCard>
-            <NStatistic
-              label="日均请求"
-              :value="stats.trend.length ? Math.round(stats.total / Math.max(stats.trend.length, 1)) : 0"
-            />
+            <NStatistic label="日均请求" :value="dailyAvg" />
           </NCard>
         </NGridItem>
       </NGrid>
 
-      <!-- 按工具分布 -->
+      <!-- AI 消耗统计（token + 金额，全历史累计） -->
+      <NGrid :cols="4" :x-gap="16" responsive="screen" item-responsive>
+        <NGridItem span="4 m:2 l:1">
+          <NCard>
+            <NStatistic label="AI 消耗金额">
+              <template #default>
+                <span style="font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums;">
+                  {{ currencySymbol(stats.currency) }}{{ formatCost(stats.ai.cost) }}
+                </span>
+              </template>
+            </NStatistic>
+          </NCard>
+        </NGridItem>
+        <NGridItem span="4 m:2 l:1">
+          <NCard>
+            <NStatistic label="输入 Token" :value="formatTokens(stats.ai.promptTokens)" />
+          </NCard>
+        </NGridItem>
+        <NGridItem span="4 m:2 l:1">
+          <NCard>
+            <NStatistic label="输出 Token" :value="formatTokens(stats.ai.completionTokens)" />
+          </NCard>
+        </NGridItem>
+        <NGridItem span="4 m:2 l:1">
+          <NCard>
+            <NStatistic label="缓存命中 Token" :value="formatTokens(stats.ai.cacheHitTokens)" />
+          </NCard>
+        </NGridItem>
+      </NGrid>
+
+      <!-- 时间范围选择器 -->
+      <NRadioGroup v-model:value="range" size="small">
+        <NRadioButton value="today">当天</NRadioButton>
+        <NRadioButton value="week">本周</NRadioButton>
+        <NRadioButton value="d14">近 14 天</NRadioButton>
+        <NRadioButton value="d30">近 30 天</NRadioButton>
+      </NRadioGroup>
+
+      <!-- 工具分布：饼图 + 右侧列表 -->
       <NCard title="按工具分布">
-        <NSpace v-if="stats.byTool.length" vertical :size="8">
-          <div v-for="item in stats.byTool" :key="item.tool" class="tool-bar">
-            <span class="tool-name">{{ item.tool }}</span>
-            <div class="bar-track">
-              <div
-                class="bar-fill"
-                :style="{
-                  width: `${(item.count / stats.total) * 100}%`,
-                  background: toolColors[item.tool] ?? '#999',
-                }"
-              />
-            </div>
-            <span class="tool-count">{{ item.count }}</span>
+        <div v-if="toolList.length" class="pie-row">
+          <div class="pie-wrap">
+            <EChart :option="pieOption" height="280px" />
           </div>
-        </NSpace>
+          <div class="legend-list">
+            <div v-for="item in toolList" :key="item.tool" class="legend-item">
+              <span class="legend-dot" :style="{ background: item.color }"></span>
+              <span class="legend-name">{{ item.tool }}</span>
+              <span class="legend-count">{{ item.count }}</span>
+              <span class="legend-pct">{{ item.percent.toFixed(1) }}%</span>
+            </div>
+          </div>
+        </div>
         <NEmpty v-else description="暂无数据" />
       </NCard>
 
-      <!-- 近 14 天趋势 -->
-      <NCard title="近 14 天请求趋势">
-        <div v-if="stats.trend.length" class="trend-chart">
-          <div v-for="day in stats.trend" :key="day.date" class="trend-col">
-            <div class="trend-bars">
-              <div
-                v-for="(count, tool) in day.counts"
-                :key="tool"
-                class="trend-bar"
-                :style="{
-                  height: `${(count / maxTrendCount) * 100}%`,
-                  background: toolColors[tool] ?? '#999',
-                }"
-                :title="`${tool}: ${count}`"
-              />
-            </div>
-            <span class="trend-date">{{ day.date.slice(5) }}</span>
-          </div>
-        </div>
+      <!-- 请求趋势：平滑折线图 -->
+      <NCard title="请求趋势">
+        <EChart v-if="trendTools.length" :option="trendOption" height="320px" />
         <NEmpty v-else description="暂无趋势数据" />
+      </NCard>
+
+      <!-- Key 调用次数排名：横向柱状图 -->
+      <NCard title="Key 调用次数排名">
+        <EChart v-if="topKeys && topKeys.items.length" :option="topKeysOption" height="320px" />
+        <NEmpty v-else description="暂无数据" />
+      </NCard>
+
+      <!-- Key AI 成本（含 defer 任务与研究工具的聚合记账；时间范围同上） -->
+      <NCard title="Key AI 成本">
+        <NDataTable
+          v-if="aiCost && aiCost.items.length"
+          :columns="aiCostColumns"
+          :data="aiCost.items"
+          :bordered="false"
+          size="small"
+          :max-height="360"
+        />
+        <NEmpty v-else description="选定时间范围内暂无 AI 调用" />
       </NCard>
     </NSpace>
   </NSpin>
 </template>
 
 <style scoped>
-.tool-bar {
+.pie-row {
   display: flex;
+  gap: 24px;
   align-items: center;
-  gap: 12px;
 }
-.tool-name {
-  width: 180px;
-  font-size: 13px;
+.pie-wrap {
+  flex: 0 0 50%;
+  max-width: 50%;
 }
-.bar-track {
+.legend-list {
   flex: 1;
-  height: 24px;
-  background: #f0f0f0;
-  border-radius: 4px;
-  overflow: hidden;
-}
-.bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s;
-}
-.tool-count {
-  width: 60px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.trend-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  height: 200px;
-  overflow-x: auto;
-  padding-bottom: 24px;
-}
-.trend-col {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  min-width: 32px;
-  height: 100%;
+  gap: 10px;
 }
-.trend-bars {
-  flex: 1;
+.legend-item {
   display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  width: 100%;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
 }
-.trend-bar {
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 10px;
+}
+.legend-name {
   flex: 1;
-  min-width: 4px;
-  border-radius: 2px 2px 0 0;
-  min-height: 2px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.trend-date {
-  font-size: 11px;
+.legend-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--n-text-color);
+  font-weight: 500;
+}
+.legend-pct {
+  width: 56px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
   color: #999;
-  margin-top: 4px;
+}
+@media (max-width: 720px) {
+  .pie-row {
+    flex-direction: column;
+  }
+  .pie-wrap {
+    flex: none;
+    max-width: 100%;
+    width: 100%;
+  }
 }
 </style>

@@ -1,0 +1,63 @@
+# 手动部署/回滚流水线：部署任意已发布到 Docker Hub 的历史版本
+#
+# 用法：GitHub 仓库 → Actions → deploy → Run workflow，填两个参数：
+#   version：目标版本号（如 0.2.0），回滚 = 填旧版本号
+#   ref    ：部署文件（compose/脚本/nginx/searxng）取哪个 git ref，默认 main；
+#            要精确复现某次发布时的配置，填对应的 tag（如 v0.2.0）
+#
+# 与 release.yml 的 deploy job 逻辑一致：同步部署文件 → 服务器执行 deploy-release.sh
+# （含 mysqldump 备份、健康检查；注意回滚只回镜像，不回数据库迁移）
+
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '目标版本（如 0.2.0，须已存在于 Docker Hub）'
+        required: true
+        type: string
+      ref:
+        description: '部署文件取自哪个 git ref（main 或历史 tag）'
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: 手动部署/回滚
+    runs-on: ubuntu-latest
+    env:
+      SSH_TARGET: ${{ secrets.VOLCANO_USER }}@${{ secrets.VOLCANO_HOST }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: 校验版本号
+        run: |
+          set -e
+          echo "${{ inputs.version }}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "✗ 版本号非语义化：${{ inputs.version }}（应为 0.2.0 形态）"; exit 1; }
+      - name: 装配 ssh 密钥
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.VOLCANO_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.VOLCANO_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+      - name: 同步部署文件
+        run: |
+          rsync -av docker-compose.prod.yml deploy/deploy-release.sh "$SSH_TARGET":/home/honlnk/linkseek/
+          rsync -av deploy/nginx/                "$SSH_TARGET":/home/honlnk/linkseek/nginx/
+          rsync -av searxng/                     "$SSH_TARGET":/home/honlnk/linkseek/searxng/
+      - name: 执行发布脚本
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          # 凭据须在 runner 侧展开后随命令传入服务器（非服务器本地变量），故豁免 SC2029
+          # shellcheck disable=SC2029
+          ssh "$SSH_TARGET" \
+            "cd /home/honlnk/linkseek && APP_VERSION='${{ inputs.version }}' DOCKERHUB_USERNAME='$DOCKERHUB_USERNAME' DOCKERHUB_TOKEN='$DOCKERHUB_TOKEN' sh ./deploy-release.sh"

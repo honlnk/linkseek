@@ -11,19 +11,32 @@ import { createApiKeyVerifier } from './auth/verifier.js';
 import { sessionMiddleware } from './auth/session.js';
 import { registerTools } from './tools/register.js';
 import { recordUsage } from './utils/usage.js';
+import { requestContext } from './utils/request-context.js';
+import type { RequestContext } from './utils/request-context.js';
+import { taskManager } from './tasks/manager.js';
+import { registerTaskExecutors } from './tasks/executors.js';
 import { createAdminRouter } from './admin/router.js';
+import { createPublicApiRouter } from './public-api/router.js';
+import { ensureBuiltinKeys } from './lib/builtin-keys.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const keyStore = createKeyStore();
 
 const app = express();
 app.use(express.json());
-// 生产环境在 Nginx 后面，需要信任代理以获取真实协议/IP（影响 secure cookie）
-if (isProduction) app.set('trust proxy', 1);
+// 生产环境在双层网关后面（honlnk-gateway → linkseek-gateway → app），
+// 需信任两跳才能从 X-Forwarded-For 解出真实客户端 IP（影响 secure cookie 与
+// /v1 匿名配额的 IP 总闸——少信一跳会把全体用户记到网关容器 IP 上共享配额）。
+if (isProduction) app.set('trust proxy', 2);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
+
+// ---- 公开 REST API（/v1/search、/v1/fetch）----
+// 挂在域名分流中间件之前：NovAI 浏览器端从公开文档域名直连，必须对所有 Host 可达。
+// 端点内部自行处理鉴权分流（Bearer Key / 匿名绿灯 + Origin 白名单 + 配额）。
+app.use('/v1', createPublicApiRouter(keyStore));
 
 // ---- 默认站点（文档 + MCP）vs 后台站点（Vue SPA）----
 // linkseek 默认行为是「文档站 + MCP 服务」，后台管理是特例。
@@ -79,23 +92,28 @@ const mcpAuth = requireBearerAuth({
 async function handleMcpRequest(req: express.Request, res: express.Response) {
   const server = await createServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  try {
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+  // 提前取出 keyId / toolName（ALS 上下文 + 用量记录都用）
+  const keyId = req.auth?.extra?.keyId as string | undefined;
+  const body = req.body as { method?: string; params?: { name?: string } } | undefined;
+  const toolName = body?.method === 'tools/call' ? body.params?.name : undefined;
 
-    // 用量记录：仅对 tools/call 请求记录
-    const keyId = req.auth?.extra?.keyId as string | undefined;
-    const body = req.body as { method?: string; params?: { name?: string } } | undefined;
-    const toolName = body?.method === 'tools/call' ? body.params?.name : undefined;
-    if (keyId && toolName) {
-      recordUsage(keyId, toolName, true);
+  // 用 ALS 建立请求上下文：AI 工具会在其中回写 token 用量，
+  // defer 路径打 deferred 标记；请求结束后这里读出，连同 success 一起记入 UsageLog。
+  const ctx: RequestContext = { keyId };
+  try {
+    await requestContext.run(ctx, async () => {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    });
+
+    // 用量记录：仅对 tools/call 请求记录。
+    // defer 脱手路径跳过——该调用的用量由 TaskManager 在任务完成时聚合记账，避免双记
+    if (keyId && toolName && !ctx.deferred) {
+      recordUsage(keyId, toolName, true, ctx.ai);
     }
   } catch (err) {
     logger.error({ err }, 'MCP 请求处理失败');
-    // 失败也记录用量（如果知道工具名）
-    const keyId = req.auth?.extra?.keyId as string | undefined;
-    const body = req.body as { method?: string; params?: { name?: string } } | undefined;
-    const toolName = body?.method === 'tools/call' ? body.params?.name : undefined;
+    // 失败也记录用量（如果知道工具名）。错误路径不带 ai 用量。
     if (keyId && toolName) recordUsage(keyId, toolName, false);
     if (!res.headersSent) {
       res.status(500).json({
@@ -144,6 +162,13 @@ app.get(/^(?!\/(api|mcp)).*/, (_req, res, next) => {
     if (err) next();
   });
 });
+
+// 内置 NovAI 用量 Key（幂等）：确保匿名绿灯调用的用量能归集进管理台
+await ensureBuiltinKeys();
+
+// 异步任务系统：注册各任务执行器并启动 TTL 清扫
+registerTaskExecutors();
+taskManager.start();
 
 app.listen(config.PORT, () => {
   logger.info(`linkseek 服务已启动: http://localhost:${config.PORT}`);

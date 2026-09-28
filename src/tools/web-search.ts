@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { searchProvider } from '../search/searxng.js';
 import { timeRangeValues } from '../search/searxng.js';
-import { buildEmptyHint } from '../search/empty-hint.js';
+import { searchWithFallback } from '../search/fallback.js';
+import { buildEmptyReport } from '../search/empty-hint.js';
 
 export const webSearchInput = {
   query: z.string().min(1).describe('搜索关键词'),
@@ -20,7 +20,9 @@ export const webSearchInput = {
   language: z
     .string()
     .optional()
-    .describe('搜索语言偏好，如 zh-CN、en、all。不传则自动判断（推荐：英文内容传 en，中文内容传 zh-CN）'),
+    .describe(
+      '搜索语言偏好。一般不传：SearXNG 会按查询内容自动处理，显式指定（尤其 zh-CN）在部分引擎上反而收窄召回导致空结果。仅在明确只要特定语言的结果时使用。',
+    ),
   categories: z
     .string()
     .optional()
@@ -44,18 +46,20 @@ export const webSearchInput = {
 
 export const webSearchDescription = `联网搜索，返回关键词匹配的网页列表。
 
-- 基于自托管 SearXNG 元搜索引擎，聚合 200+ 搜索源
+- 基于自托管 SearXNG 元搜索引擎，聚合多个搜索源（Google、Bing、Wikipedia 等）
 - 返回结构化结果：每条含标题、URL、摘要
-- 支持按分类（categories）、引擎（engines）、时间范围、语言过滤
 - 结果按相关性评分和来源权威性排序，自动去重
 - 可用 preferred_sites 指定优先域名，适合限定优先参考的官网、GitHub 仓库或文档站
+- 空结果时服务端会自动逐级放宽参数重试（去 language / 换引擎），返回中附带真实诊断信息（尝试过的参数组合、无响应引擎）和下一步建议
+
+如何写查询（重要）：
+- 用空格分隔的关键词，不要写完整句子（如 "Next.js 15 app router 迁移"）
+- 不要使用 OR / AND / 引号 / site: 等搜索运算符——部分引擎不支持，会导致 0 结果
 
 如何选择参数：
 - 技术类问题 → categories=it
 - 学术论文 → categories=science
-- 英文内容 → language=en
-- 需要特定官网或站点优先 → preferred_sites=["example.com"]
-- 需要特定引擎结果 → engines=google,bing`;
+- 需要特定官网或站点优先 → preferred_sites=["example.com"]`;
 
 export function registerWebSearch(server: McpServer): void {
   server.registerTool(
@@ -63,7 +67,7 @@ export function registerWebSearch(server: McpServer): void {
     { description: webSearchDescription, inputSchema: webSearchInput },
     async ({ query, maxResults, timeRange, language, categories, engines, preferred_sites }) => {
       try {
-        const results = await searchProvider.search(query, {
+        const { results, diagnostics } = await searchWithFallback(query, {
           maxResults,
           timeRange: timeRange as 'day' | 'month' | 'year' | undefined,
           language,
@@ -73,9 +77,8 @@ export function registerWebSearch(server: McpServer): void {
         });
 
         if (results.length === 0) {
-          const hint = buildEmptyHint(categories, engines);
           return {
-            content: [{ type: 'text', text: `未找到与「${query}」相关的结果。${hint}` }],
+            content: [{ type: 'text', text: buildEmptyReport(query, diagnostics) }],
           };
         }
 

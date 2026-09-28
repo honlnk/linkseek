@@ -3,7 +3,9 @@
 # 架构：
 #   公网:443 → honlnk-gateway(共享, HTTPS 终止) → linkseek-gateway(项目专属, HTTPS) → linkseek-app:7300
 #
-# app/gateway 镜像从 Docker Hub 拉取，服务器上无需源码/构建。
+# app 镜像从 Docker Hub 拉取，服务器上无需源码/构建。
+# 版本钉定：APP_IMAGE_TAG 由 deploy/deploy-release.sh 写入同目录 .env（CI 发布/回滚均改此值）；
+# fallback latest 仅保证 bootstrap 时 .env 尚无该键也能 up，日常发布永不走 latest。
 # 若需本地构建 app，把 app.image 换成 app.build: .
 #
 # 与 docker-compose.yml（本地开发）的区别：
@@ -32,7 +34,7 @@ services:
     # 不映射端口 —— 纯容器间通信
 
   app:
-    image: honlnk/linkseek:latest
+    image: honlnk/linkseek:${APP_IMAGE_TAG:-latest}
     container_name: linkseek-app
     restart: unless-stopped
     # 应用运行时配置（含密码）从独立文件读取，该文件不进 git（.gitignore 屏蔽 env/）

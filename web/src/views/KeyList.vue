@@ -17,10 +17,13 @@ import {
   useMessage,
   type DataTableColumns,
 } from 'naive-ui';
-import { api, type ApiKeyItem } from '../api.js';
+import { api, BUILTIN_NOVAI_KEY_ID, type ApiKeyItem } from '../api.js';
 
 const router = useRouter();
 const message = useMessage();
+
+/** 内置 NovAI 伪 Key 行：前缀不带省略号、创建时间显示 ---、无删除；开关是匿名通道总闸 */
+const isBuiltinKey = (row: ApiKeyItem) => row.id === BUILTIN_NOVAI_KEY_ID;
 
 const keys = ref<ApiKeyItem[]>([]);
 const loading = ref(false);
@@ -118,7 +121,11 @@ const columns: DataTableColumns<ApiKeyItem> = [
       );
     },
   },
-  { title: 'Key 前缀', key: 'tokenPrefix', render: (row) => `${row.tokenPrefix}...` },
+  {
+    title: 'Key 前缀',
+    key: 'tokenPrefix',
+    render: (row) => (isBuiltinKey(row) ? row.tokenPrefix : `${row.tokenPrefix}...`),
+  },
   {
     title: '用量',
     key: 'usages',
@@ -130,6 +137,7 @@ const columns: DataTableColumns<ApiKeyItem> = [
     render(row) {
       return h(NSwitch, {
         value: row.enabled,
+        title: isBuiltinKey(row) ? '匿名通道总闸：关闭后所有 NovAI 匿名调用将被拒绝' : undefined,
         onUpdateValue: (v: boolean) => handleToggle(row, v),
       });
     },
@@ -137,12 +145,13 @@ const columns: DataTableColumns<ApiKeyItem> = [
   {
     title: '创建时间',
     key: 'createdAt',
-    render: (row) => new Date(row.createdAt).toLocaleString('zh-CN'),
+    render: (row) => (isBuiltinKey(row) ? '---' : new Date(row.createdAt).toLocaleString('zh-CN')),
   },
   {
     title: '操作',
     key: 'actions',
     render(row) {
+      if (isBuiltinKey(row)) return h('span', { style: 'color: #999' }, '—');
       return h(NPopconfirm, {
         onPositiveClick: () => handleDelete(row),
       }, {

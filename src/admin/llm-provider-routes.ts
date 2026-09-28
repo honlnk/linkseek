@@ -10,6 +10,7 @@ import {
   fetchAndCacheModels,
 } from '../llm/provider-store.js';
 import type { Protocol } from '../llm/types.js';
+import type { ProviderPricing } from '../utils/cost.js';
 
 const VALID_PROTOCOLS: Protocol[] = ['openai', 'openai-responses', 'anthropic', 'gemini'];
 
@@ -28,13 +29,14 @@ export function createLlmProviderRouter(): Router {
 
   /** POST /api/llm-providers —— 创建 Provider */
   router.post('/', async (req, res) => {
-    const { name, protocol, baseUrl, apiKey, model, isDefault } = req.body as {
+    const { name, protocol, baseUrl, apiKey, model, isDefault, pricing } = req.body as {
       name?: string;
       protocol?: string;
       baseUrl?: string;
       apiKey?: string;
       model?: string;
       isDefault?: boolean;
+      pricing?: Partial<ProviderPricing>;
     };
 
     if (!name?.trim()) {
@@ -66,6 +68,7 @@ export function createLlmProviderRouter(): Router {
         apiKey: apiKey.trim(),
         model: model.trim(),
         isDefault,
+        pricing,
       });
       logger.info({ providerId: provider.id, name: provider.name }, '创建 LLM Provider');
       res.status(201).json({ id: provider.id, name: provider.name });
@@ -77,7 +80,7 @@ export function createLlmProviderRouter(): Router {
 
   /** PATCH /api/llm-providers/:id —— 更新 Provider（空 apiKey = 不改） */
   router.patch('/:id', async (req, res) => {
-    const { name, protocol, baseUrl, apiKey, model, enabled, isDefault } = req.body as {
+    const { name, protocol, baseUrl, apiKey, model, enabled, isDefault, pricing } = req.body as {
       name?: string;
       protocol?: string;
       baseUrl?: string;
@@ -85,6 +88,7 @@ export function createLlmProviderRouter(): Router {
       model?: string;
       enabled?: boolean;
       isDefault?: boolean;
+      pricing?: Partial<ProviderPricing>;
     };
 
     if (protocol !== undefined && !VALID_PROTOCOLS.includes(protocol as Protocol)) {
@@ -101,6 +105,7 @@ export function createLlmProviderRouter(): Router {
         model,
         enabled,
         isDefault,
+        pricing,
       });
       res.json({ id: provider.id, name: provider.name });
     } catch (err) {
