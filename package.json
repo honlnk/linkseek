@@ -1,6 +1,6 @@
 {
   "name": "linkseek",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "自托管的远程 MCP 服务，提供联网搜索与网页获取能力",
   "type": "module",
   "private": true,
