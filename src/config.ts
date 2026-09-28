@@ -89,8 +89,9 @@ const schema = z.object({
   PRICING_USD_RATE: z.coerce.number().positive().default(7),
   FETCH_TIMEOUT: z.coerce.number().int().positive().default(30_000),
   // ---- 公开 REST API（/v1/search、/v1/fetch）绿灯通道 ----
-  // Origin 白名单（逗号分隔）。匿名（无 API Key）请求要求 Origin 命中白名单，
-  // 否则拒绝。未配置 = 绿灯整体关闭（不影响 key 鉴权流量）。
+  // Origin 白名单（逗号分隔）。仅控制匿名（无 API Key）请求：Origin 命中白名单
+  // 才允许走绿灯。未配置 = 绿灯整体关闭（不影响 key 鉴权流量）。
+  // Key 流量不受此限制——CORS 对所有 Origin 放行，Key 即鉴权；
   // 注意：Origin 头只对浏览器有约束力，非浏览器客户端可伪造——它是防误用的软开关，
   // 真正的防线是下面的配额与限流。
   PUBLIC_API_ALLOWED_ORIGINS: z
@@ -110,6 +111,9 @@ const schema = z.object({
   PUBLIC_API_RENDER_COST: z.coerce.number().int().positive().default(2),
   // 突发限流：每身份每分钟最多请求数（内存滑动窗口）
   PUBLIC_API_BURST_PER_MINUTE: z.coerce.number().int().positive().default(10),
+  // Key 直连突发限流：每 Key 每分钟最多请求数（内存滑动窗口）。
+  // 高于匿名档——合法 Key 用户的 Agent 单问可达 30 次工具调用；Key 不设日配额。
+  PUBLIC_API_KEY_BURST_PER_MINUTE: z.coerce.number().int().positive().default(30),
   MAX_RESPONSE_SIZE: z.coerce.number().int().positive().default(5_242_880),
   MAX_REDIRECTS: z.coerce.number().int().positive().default(5),
   SSRF_STRICT: z
