@@ -30,8 +30,11 @@ export interface ChatOpts {
   messages: ChatMessage[];
   conn: ConnectionConfig;
   temperature?: number;
-  maxTokens?: number;
-  /** 超时毫秒，默认 30s */
+  /**
+   * 超时毫秒，默认 600s（10 分钟总时长闸，兜底服务端卡死；不是输出 token 限制）。
+   * 输出不设 maxTokens：除 Anthropic 因协议必填传固定 8192 占位外，
+   * 其余协议省略上限字段，即用模型默认输出上限。
+   */
   timeout?: number;
 }
 

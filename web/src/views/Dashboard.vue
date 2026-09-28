@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
-import { NCard, NGrid, NGridItem, NStatistic, NSpace, NEmpty, NSpin, NRadioGroup, NRadioButton } from 'naive-ui';
+import { ref, computed, onMounted, watch, h } from 'vue';
+import { NCard, NGrid, NGridItem, NStatistic, NSpace, NEmpty, NSpin, NRadioGroup, NRadioButton, NDataTable } from 'naive-ui';
+import type { DataTableColumns } from 'naive-ui';
 import type { EChartsOption } from 'echarts';
 import EChart from '../components/EChart.vue';
 import { toolColor } from '../shared.js';
-import { api, type OverviewStats, type TopKeysResp } from '../api.js';
+import { api, type OverviewStats, type TopKeysResp, type AiCostResp, type AiCostItem } from '../api.js';
 
 /** 趋势时间范围选择 */
 type RangeKey = 'today' | 'week' | 'd14' | 'd30';
@@ -52,6 +53,7 @@ const bucket = computed(() => rangeToBucket(range.value));
 
 const stats = ref<OverviewStats | null>(null);
 const topKeys = ref<TopKeysResp | null>(null);
+const aiCost = ref<AiCostResp | null>(null);
 const loading = ref(true);
 
 /**
@@ -72,12 +74,14 @@ const dailyAvg = computed(() => {
 async function load() {
   loading.value = true;
   try {
-    const [overview, top] = await Promise.all([
+    const [overview, top, cost] = await Promise.all([
       api<OverviewStats>(`/stats/overview?days=${days.value}&bucket=${bucket.value}`),
       api<TopKeysResp>(`/stats/top-keys?days=${days.value}&limit=10`),
+      api<AiCostResp>(`/stats/ai-cost?days=${days.value}`),
     ]);
     stats.value = overview;
     topKeys.value = top;
+    aiCost.value = cost;
   } finally {
     loading.value = false;
   }
@@ -141,6 +145,33 @@ const toolList = computed(() => {
     }))
     .sort((a, b) => b.count - a.count);
 });
+
+// ---- Key AI 成本表（时间范围与上方趋势一致） ----
+const aiCostColumns = computed<DataTableColumns<AiCostItem>>(() => [
+  { title: 'Key', key: 'name', minWidth: 140, ellipsis: { tooltip: true } },
+  { title: 'AI 请求数', key: 'requests', width: 110, align: 'right' },
+  {
+    title: '输入 Token',
+    key: 'promptTokens',
+    width: 130,
+    align: 'right',
+    render: (row) => formatTokens(row.promptTokens),
+  },
+  {
+    title: '输出 Token',
+    key: 'completionTokens',
+    width: 130,
+    align: 'right',
+    render: (row) => formatTokens(row.completionTokens),
+  },
+  {
+    title: () => `成本（${currencySymbol(stats.value?.currency ?? 'CNY')}）`,
+    key: 'cost',
+    width: 120,
+    align: 'right',
+    render: (row) => formatCost(row.cost),
+  },
+]);
 
 // ---- 请求趋势平滑折线图 ----
 /**
@@ -373,6 +404,19 @@ const topKeysOption = computed<EChartsOption>(() => {
       <NCard title="Key 调用次数排名">
         <EChart v-if="topKeys && topKeys.items.length" :option="topKeysOption" height="320px" />
         <NEmpty v-else description="暂无数据" />
+      </NCard>
+
+      <!-- Key AI 成本（含 defer 任务与研究工具的聚合记账；时间范围同上） -->
+      <NCard title="Key AI 成本">
+        <NDataTable
+          v-if="aiCost && aiCost.items.length"
+          :columns="aiCostColumns"
+          :data="aiCost.items"
+          :bordered="false"
+          size="small"
+          :max-height="360"
+        />
+        <NEmpty v-else description="选定时间范围内暂无 AI 调用" />
       </NCard>
     </NSpace>
   </NSpin>

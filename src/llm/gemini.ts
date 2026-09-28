@@ -6,7 +6,7 @@
  * - 鉴权：URL query ?key=
  * - system 消息抽到顶层 systemInstruction
  * - messages 转 contents:[{role, parts:[{text}]}]，assistant→model 映射
- * - temperature / maxTokens 进 generationConfig（maxTokens → maxOutputTokens）
+ * - temperature 进 generationConfig（不设 maxOutputTokens，省略即用模型默认输出上限）
  *
  * 精简自 duet/server/src/ai/providers/gemini.ts。
  */
@@ -69,15 +69,15 @@ function toGeminiInput(messages: ChatMessage[]): {
   return result;
 }
 
-/** 非流式聊天 */
+/** 非流式聊天（不设 maxOutputTokens：省略即用模型默认输出上限） */
 async function chatComplete(opts: ChatOpts): Promise<ChatResult> {
-  const { messages, conn, temperature = 0.3, maxTokens = 2000, timeout = 30_000 } = opts;
+  const { messages, conn, temperature = 0.3, timeout = 600_000 } = opts;
   const { systemInstruction, contents } = toGeminiInput(messages);
   const base = trimBaseUrl(conn.baseUrl);
   const url = `${base}/v1beta/models/${conn.model}:generateContent?key=${conn.apiKey}`;
   const body: Record<string, unknown> = {
     contents,
-    generationConfig: { temperature, maxOutputTokens: maxTokens },
+    generationConfig: { temperature },
   };
   if (systemInstruction) body.systemInstruction = systemInstruction;
 

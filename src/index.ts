@@ -12,6 +12,9 @@ import { sessionMiddleware } from './auth/session.js';
 import { registerTools } from './tools/register.js';
 import { recordUsage } from './utils/usage.js';
 import { requestContext } from './utils/request-context.js';
+import type { RequestContext } from './utils/request-context.js';
+import { taskManager } from './tasks/manager.js';
+import { registerTaskExecutors } from './tasks/executors.js';
 import { createAdminRouter } from './admin/router.js';
 import { createPublicApiRouter } from './public-api/router.js';
 import { ensureBuiltinKeys } from './lib/builtin-keys.js';
@@ -95,16 +98,17 @@ async function handleMcpRequest(req: express.Request, res: express.Response) {
   const toolName = body?.method === 'tools/call' ? body.params?.name : undefined;
 
   // 用 ALS 建立请求上下文：AI 工具会在其中回写 token 用量，
-  // 请求结束后这里读出，连同 success 一起记入 UsageLog。
-  const ctx: { keyId?: string; ai?: import('./utils/request-context.js').AiUsagePayload } = { keyId };
+  // defer 路径打 deferred 标记；请求结束后这里读出，连同 success 一起记入 UsageLog。
+  const ctx: RequestContext = { keyId };
   try {
     await requestContext.run(ctx, async () => {
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
     });
 
-    // 用量记录：仅对 tools/call 请求记录
-    if (keyId && toolName) {
+    // 用量记录：仅对 tools/call 请求记录。
+    // defer 脱手路径跳过——该调用的用量由 TaskManager 在任务完成时聚合记账，避免双记
+    if (keyId && toolName && !ctx.deferred) {
       recordUsage(keyId, toolName, true, ctx.ai);
     }
   } catch (err) {
@@ -161,6 +165,10 @@ app.get(/^(?!\/(api|mcp)).*/, (_req, res, next) => {
 
 // 内置 NovAI 用量 Key（幂等）：确保匿名绿灯调用的用量能归集进管理台
 await ensureBuiltinKeys();
+
+// 异步任务系统：注册各任务执行器并启动 TTL 清扫
+registerTaskExecutors();
+taskManager.start();
 
 app.listen(config.PORT, () => {
   logger.info(`linkseek 服务已启动: http://localhost:${config.PORT}`);

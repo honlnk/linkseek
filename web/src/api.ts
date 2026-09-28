@@ -83,6 +83,30 @@ export interface TopKeysResp {
   items: TopKeyItem[];
 }
 
+// ---- 任务系统 ----
+
+/** 任务并发配置（GET/PUT /settings/tasks） */
+export interface TaskSettings {
+  perKey: number;
+  global: number;
+  defaults?: { perKey: number; global: number };
+}
+
+/** Key 维度 AI 成本（GET /stats/ai-cost） */
+export interface AiCostItem {
+  keyId: string;
+  name: string;
+  requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  cost: number;
+}
+
+export interface AiCostResp {
+  currency: string;
+  items: AiCostItem[];
+}
+
 // ---- LLM Provider ----
 
 export type Protocol = 'openai' | 'openai-responses' | 'anthropic' | 'gemini';

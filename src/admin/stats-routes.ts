@@ -260,5 +260,54 @@ export function createStatsRouter(): Router {
     });
   });
 
+  /**
+   * GET /api/stats/ai-cost —— Key 维度 AI 成本视图
+   * 近 N 天内 AI 调用（providerId 非空，即 web_fetch_answer / web_search_answer / web_research）
+   * 按 Key 聚合：请求数、输入/输出 token、成本合计，按成本降序。
+   */
+  router.get('/ai-cost', async (req, res) => {
+    const days = Math.min(Number(req.query.days) || 30, 90);
+
+    const since = new Date();
+    since.setUTCDate(since.getUTCDate() - days);
+    since.setUTCHours(0, 0, 0, 0);
+
+    const grouped = await prisma.usageLog.groupBy({
+      by: ['keyId'],
+      where: { providerId: { not: null }, createdAt: { gte: since } },
+      _count: { _all: true },
+      _sum: {
+        promptTokens: true,
+        completionTokens: true,
+        cost: true,
+      },
+    });
+
+    if (grouped.length === 0) {
+      res.json({ currency: config.CURRENCY, items: [] });
+      return;
+    }
+
+    // 批量取 Key 名称（已删除的 Key 保留历史用量）
+    const keys = await prisma.apiKey.findMany({
+      where: { id: { in: grouped.map((g) => g.keyId) } },
+      select: { id: true, name: true },
+    });
+    const nameMap = new Map(keys.map((k) => [k.id, k.name]));
+
+    const items = grouped
+      .map((g) => ({
+        keyId: g.keyId,
+        name: nameMap.get(g.keyId) ?? '(已删除)',
+        requests: g._count._all,
+        promptTokens: g._sum.promptTokens ?? 0,
+        completionTokens: g._sum.completionTokens ?? 0,
+        cost: g._sum.cost ?? 0,
+      }))
+      .sort((a, b) => b.cost - a.cost);
+
+    res.json({ currency: config.CURRENCY, items });
+  });
+
   return router;
 }

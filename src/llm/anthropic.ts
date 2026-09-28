@@ -61,15 +61,16 @@ function splitSystem(messages: ChatMessage[]): { system: string; messages: ChatM
   return { system: systemParts.join('\n\n'), messages: rest };
 }
 
-/** 非流式聊天 */
+/** 非流式聊天。max_tokens 为 Anthropic 协议必填字段，固定 8192
+ *  （在售 Claude 模型输出上限均 ≥8192，此为协议占位而非截断设计，长回答被截再上调） */
 async function chatComplete(opts: ChatOpts): Promise<ChatResult> {
-  const { messages, conn, temperature = 0.3, maxTokens = 2000, timeout = 30_000 } = opts;
+  const { messages, conn, temperature = 0.3, timeout = 600_000 } = opts;
   const { system, messages: apiMessages } = splitSystem(messages);
   const url = `${trimBaseUrl(conn.baseUrl)}/v1/messages`;
   const body: Record<string, unknown> = {
     model: conn.model,
     messages: apiMessages,
-    max_tokens: maxTokens,
+    max_tokens: 8192,
     temperature,
     stream: false,
   };

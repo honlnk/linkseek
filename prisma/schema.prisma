@@ -98,6 +98,14 @@ model AdminUser {
   updatedAt    DateTime @updatedAt
 }
 
+/// 运行时配置（key-value）。管理台可改，服务端热读取。
+/// 本期存任务并发上限（taskConcurrencyPerKey / taskConcurrencyGlobal）。
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 /// 匿名免费额度用量 —— 公开 REST API（/v1/*）绿灯通道的按日配额计数。
 /// 与 UsageLog 分离：UsageLog 挂 ApiKey 外键记 key 鉴权流量，本表记匿名流量。
 model FreeUsage {

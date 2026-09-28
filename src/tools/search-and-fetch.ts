@@ -8,6 +8,8 @@ import { isLowQualityContent } from '../fetch/content-quality.js';
 import { browserFetchProvider } from '../fetch/browser-fetch.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { deferParam, submitDeferTask, syncRunCtx } from '../tasks/defer.js';
+import type { TaskRunContext, TaskToolResult } from '../tasks/manager.js';
 
 export const searchAndFetchInput = {
   query: z.string().min(1).describe('搜索关键词'),
@@ -54,6 +56,7 @@ export const searchAndFetchInput = {
     .describe(
       '优先展示并抓取的域名列表，如 ["github.com", "react.dev"]。传域名而非完整 URL；匹配域名及其子域名的结果会排在前面。',
     ),
+  defer: deferParam,
 };
 
 export const searchAndFetchDescription = `搜索关键词并自动获取前几个结果的页面正文，一次调用完成「搜索 + 获取」。
@@ -62,9 +65,22 @@ export const searchAndFetchDescription = `搜索关键词并自动获取前几�
 - 单个页面获取失败不影响其他结果（失败项会标注原因），403/429/SPA 空正文自动降级浏览器渲染
 - 空结果时服务端自动逐级放宽参数重试（去 language / 换引擎），并附带诊断信息与建议
 - 查询写成空格分隔的关键词，不要用完整句子或 OR / 引号 / site: 等搜索运算符
+- 耗时可达十几秒；不需要立刻拿结果时可传 defer=true 脱手，用返回的 taskId 稍后经 get_result 取
 - 适合需要快速获取多个来源内容的场景
 
 输出包含每个结果的标题、URL、摘要，以及成功获取的页面正文。`;
+
+/** runSearchAndFetch 的输入（工具 schema 的推断类型） */
+export interface SearchAndFetchRunInput {
+  query: string;
+  fetchCount?: number;
+  searchMaxResults?: number;
+  timeRange?: string;
+  language?: string;
+  categories?: string;
+  engines?: string;
+  preferred_sites?: string[];
+}
 
 /**
  * 判断 HTTP 抓取失败的原因是否适合降级到浏览器渲染。
@@ -88,80 +104,112 @@ function shouldFallbackToBrowser(err: unknown): boolean {
   return false;
 }
 
+/**
+ * 共享执行逻辑：同步回调与异步任务执行器走同一函数，避免双份实现漂移。
+ */
+export async function runSearchAndFetch(
+  input: SearchAndFetchRunInput,
+  ctx: TaskRunContext,
+): Promise<TaskToolResult> {
+  const {
+    query,
+    fetchCount = 3,
+    searchMaxResults = 10,
+    timeRange,
+    language,
+    categories,
+    engines,
+    preferred_sites,
+  } = input;
+
+  // 1. 搜索（带降级重试链）
+  ctx.setProgress('搜索中');
+  let results;
+  let searchDiagnostics;
+  try {
+    const outcome = await searchWithFallback(query, {
+      maxResults: searchMaxResults,
+      timeRange: timeRange as 'day' | 'month' | 'year' | undefined,
+      language,
+      categories,
+      engines,
+      preferredSites: preferred_sites,
+    });
+    results = outcome.results;
+    searchDiagnostics = outcome.diagnostics;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      isError: true,
+      content: [{ type: 'text', text: `搜索失败: ${message}` }],
+    };
+  }
+
+  if (results.length === 0) {
+    return {
+      content: [{ type: 'text', text: buildEmptyReport(query, searchDiagnostics) }],
+    };
+  }
+
+  // 2. 取前 fetchCount 个结果，并行获取正文（进度按完成数递增）
+  const targets = results.slice(0, fetchCount);
+  let fetchedCount = 0;
+  const fetchResults = await Promise.allSettled(
+    targets.map(async (r) => {
+      const markdown = await fetchPageAsMarkdown(r.url);
+      fetchedCount++;
+      ctx.setProgress(`抓取中 ${fetchedCount}/${targets.length}`);
+      return markdown;
+    }),
+  );
+
+  // 3. 合并输出
+  const sections: string[] = [];
+  for (let i = 0; i < targets.length; i++) {
+    const r = targets[i];
+    const fr = fetchResults[i];
+    const header = `## ${i + 1}. ${r.title}\nURL: ${r.url}\n摘要: ${r.snippet}`;
+
+    if (fr.status === 'fulfilled') {
+      // 检测 WAF 挑战页 / 乱码内容
+      if (isLowQualityContent(fr.value)) {
+        // 信号驱动降级：检测到低质内容 → 自动用 stealth 浏览器重抓
+        const section = await tryBrowserFallback(r.url, header);
+        sections.push(section);
+      } else {
+        // 正常内容：截取正文摘要（避免单条过长，整篇正文已有 100KB 截断）
+        const body = fr.value.slice(0, 8000);
+        sections.push(`${header}\n\n### 正文\n${body}`);
+      }
+    } else {
+      const reason = fr.reason instanceof Error ? fr.reason.message : String(fr.reason);
+      logger.warn({ url: r.url, reason }, 'search_and_fetch 单页获取失败');
+
+      // 403/429/SPA 空正文 → 浏览器可能绕过，尝试降级
+      if (shouldFallbackToBrowser(fr.reason)) {
+        const section = await tryBrowserFallback(r.url, header, reason);
+        sections.push(section);
+      } else {
+        sections.push(`${header}\n\n### 正文获取失败\n${reason}`);
+      }
+    }
+  }
+
+  const summary = `搜索「${query}」找到 ${results.length} 条结果，已获取前 ${targets.length} 条正文：\n\n${sections.join('\n\n---\n\n')}`;
+
+  return { content: [{ type: 'text', text: summary }] };
+}
+
 export function registerSearchAndFetch(server: McpServer): void {
   server.registerTool(
     'web_search_and_fetch',
     { description: searchAndFetchDescription, inputSchema: searchAndFetchInput },
-    async ({ query, fetchCount = 3, searchMaxResults = 10, timeRange, language, categories, engines, preferred_sites }) => {
-      // 1. 搜索（带降级重试链）
-      let results;
-      let searchDiagnostics;
-      try {
-        const outcome = await searchWithFallback(query, {
-          maxResults: searchMaxResults,
-          timeRange: timeRange as 'day' | 'month' | 'year' | undefined,
-          language,
-          categories,
-          engines,
-          preferredSites: preferred_sites,
-        });
-        results = outcome.results;
-        searchDiagnostics = outcome.diagnostics;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return {
-          isError: true,
-          content: [{ type: 'text', text: `搜索失败: ${message}` }],
-        };
+    async (input) => {
+      if (input.defer) {
+        const { defer: _defer, ...params } = input;
+        return submitDeferTask('web_search_and_fetch', params);
       }
-
-      if (results.length === 0) {
-        return {
-          content: [{ type: 'text', text: buildEmptyReport(query, searchDiagnostics) }],
-        };
-      }
-
-      // 2. 取前 fetchCount 个结果，并行获取正文
-      const targets = results.slice(0, fetchCount);
-      const fetchResults = await Promise.allSettled(
-        targets.map((r) => fetchPageAsMarkdown(r.url)),
-      );
-
-      // 3. 合并输出
-      const sections: string[] = [];
-      for (let i = 0; i < targets.length; i++) {
-        const r = targets[i];
-        const fr = fetchResults[i];
-        const header = `## ${i + 1}. ${r.title}\nURL: ${r.url}\n摘要: ${r.snippet}`;
-
-        if (fr.status === 'fulfilled') {
-          // 检测 WAF 挑战页 / 乱码内容
-          if (isLowQualityContent(fr.value)) {
-            // 信号驱动降级：检测到低质内容 → 自动用 stealth 浏览器重抓
-            const section = await tryBrowserFallback(r.url, header);
-            sections.push(section);
-          } else {
-            // 正常内容：截取正文摘要（避免单条过长，整篇正文已有 100KB 截断）
-            const body = fr.value.slice(0, 8000);
-            sections.push(`${header}\n\n### 正文\n${body}`);
-          }
-        } else {
-          const reason = fr.reason instanceof Error ? fr.reason.message : String(fr.reason);
-          logger.warn({ url: r.url, reason }, 'search_and_fetch 单页获取失败');
-
-          // 403/429/SPA 空正文 → 浏览器可能绕过，尝试降级
-          if (shouldFallbackToBrowser(fr.reason)) {
-            const section = await tryBrowserFallback(r.url, header, reason);
-            sections.push(section);
-          } else {
-            sections.push(`${header}\n\n### 正文获取失败\n${reason}`);
-          }
-        }
-      }
-
-      const summary = `搜索「${query}」找到 ${results.length} 条结果，已获取前 ${targets.length} 条正文：\n\n${sections.join('\n\n---\n\n')}`;
-
-      return { content: [{ type: 'text', text: summary }] };
+      return runSearchAndFetch(input, syncRunCtx);
     },
   );
 }

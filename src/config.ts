@@ -78,11 +78,10 @@ const schema = z.object({
   // Chromium 页面请求代理（通过 launch args --proxy-server 传入）。
   // 不配则直连。国内服务器访问境外站点时需设为与 HTTP_PROXY 一致的地址。
   BROWSER_FETCH_PROXY: z.string().optional(),
-  // ---- AI 增强（web_fetch_answer / web_search_answer）----
-  // LLM 调用超时（毫秒）；给慢模型（如 o1 / 深度思考）留足时间
-  LLM_TIMEOUT: z.coerce.number().int().positive().default(60_000),
-  // QA 回答最大 token 数
-  LLM_MAX_TOKENS: z.coerce.number().int().positive().default(2000),
+  // ---- AI 增强（web_fetch_answer / web_search_answer / web_research）----
+  // LLM 调用超时（毫秒）：10 分钟总时长闸，兜底服务端卡死无响应；
+  // 不是输出限制——除 Anthropic（协议必填，固定 8192）外不传任何输出 token 上限
+  LLM_TIMEOUT: z.coerce.number().int().positive().default(600_000),
   // ---- 成本统计（单一货币）----
   // 全局展示货币代码（仅用于符号展示，成本为纯数字累加不做汇率转换）
   CURRENCY: z.string().default('CNY'),

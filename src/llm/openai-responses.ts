@@ -65,16 +65,15 @@ function toResponsesInput(messages: ChatMessage[]): {
   return result;
 }
 
-/** 非流式聊天 */
+/** 非流式聊天（不设 max_output_tokens：省略即用模型默认输出上限） */
 async function chatComplete(opts: ChatOpts): Promise<ChatResult> {
-  const { messages, conn, temperature = 0.3, maxTokens = 2000, timeout = 30_000 } = opts;
+  const { messages, conn, temperature = 0.3, timeout = 600_000 } = opts;
   const { instructions, input } = toResponsesInput(messages);
   const url = `${trimBaseUrl(conn.baseUrl)}/responses`;
   const body: Record<string, unknown> = {
     model: conn.model,
     input,
     temperature,
-    max_output_tokens: maxTokens,
     stream: false,
   };
   if (instructions) body.instructions = instructions;
