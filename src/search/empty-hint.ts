@@ -1,19 +1,30 @@
+import type { SearchDiagnostics } from './provider.js';
+
 /**
- * 搜索无结果时的诊断提示。
- *
- * SearXNG 的分类是引擎集合标签，不是语义分类器：
- * - 某分类下的引擎可能因限流、超时或代理问题整体无响应
- * - 该查询可能在指定分类的引擎里本就没有结果
- * 此时建议放宽到 general 或显式指定 engines，而不是凭空生成结果。
+ * 空结果报告。服务端已通过降级重试链尽力（见 search/fallback.ts），
+ * 这里的职责是把「做过什么、为什么空、下一步怎么办」如实告诉调用方，
+ * 让 AI 能做出有依据的决策（改写重试 / 换工具 / 告知用户引擎故障），
+ * 而不是对着一句"未找到"瞎猜。
  */
-export function buildEmptyHint(categories?: string, engines?: string): string {
-  const hints: string[] = [];
-  if (categories && categories !== 'general') {
-    hints.push(`分类「${categories}」的引擎可能暂时无响应或不匹配该查询，可尝试 categories=general`);
+export function buildEmptyReport(query: string, diagnostics?: SearchDiagnostics): string {
+  const lines: string[] = [`未找到与「${query}」相关的结果。`];
+
+  if (diagnostics && diagnostics.attempts.length > 0) {
+    const tried = diagnostics.attempts
+      .map((a) => `${a.label}(${a.resultCount < 0 ? `请求失败: ${a.error ?? '未知错误'}` : `${a.resultCount} 条`})`)
+      .join(' → ');
+    lines.push(`已自动尝试 ${diagnostics.attempts.length} 组参数：${tried}。`);
+    if (diagnostics.unresponsiveEngines.length > 0) {
+      lines.push(
+        `无响应引擎：${diagnostics.unresponsiveEngines.join('、')}（可能被上游限流或网络故障）。`,
+      );
+    }
   }
-  if (!engines) {
-    hints.push('或用 engines 显式指定引擎（如 engines=google,bing）');
-  }
-  if (hints.length === 0) return '';
-  return '建议：' + hints.join('；') + '。';
+
+  lines.push(
+    '建议：把查询改写为更简洁的关键词（去掉引号 / OR / AND / site: 等搜索运算符）后重试一次；' +
+      '若仍无结果，可能是引擎侧故障，建议改用其他搜索途径并稍后再试。',
+  );
+
+  return lines.join('\n');
 }

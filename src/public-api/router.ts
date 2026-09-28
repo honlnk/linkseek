@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import type { KeyStore } from '../auth/key-store.js';
-import { searchProvider } from '../search/searxng.js';
-import { buildEmptyHint } from '../search/empty-hint.js';
+import { searchWithFallback } from '../search/fallback.js';
+import { buildEmptyReport } from '../search/empty-hint.js';
 import { fetchPageDetailed, FetchError } from '../fetch/http-fetch.js';
 import { browserFetchProvider } from '../fetch/browser-fetch.js';
 import { isLowQualityContent } from '../fetch/content-quality.js';
@@ -202,7 +202,7 @@ export function createPublicApiRouter(keyStore: KeyStore): Router {
     const { query, maxResults, timeRange, language, categories, engines, preferredSites } = parsed.data;
 
     try {
-      const results = await searchProvider.search(query, {
+      const { results, diagnostics } = await searchWithFallback(query, {
         maxResults,
         timeRange,
         language,
@@ -216,7 +216,7 @@ export function createPublicApiRouter(keyStore: KeyStore): Router {
         query,
         count: results.length,
         results,
-        ...(results.length === 0 ? { hint: buildEmptyHint(categories, engines) } : {}),
+        ...(results.length === 0 ? { hint: buildEmptyReport(query, diagnostics) } : {}),
       });
     } catch (err) {
       logger.warn({ err, query }, '公开搜索失败');

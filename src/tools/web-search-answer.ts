@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { searchProvider } from '../search/searxng.js';
 import { timeRangeValues } from '../search/searxng.js';
-import { buildEmptyHint } from '../search/empty-hint.js';
+import { searchWithFallback } from '../search/fallback.js';
+import { buildEmptyReport } from '../search/empty-hint.js';
 import { fetchPageAsMarkdown, FetchError } from '../fetch/http-fetch.js';
 import { isLowQualityContent } from '../fetch/content-quality.js';
 import { browserFetchProvider } from '../fetch/browser-fetch.js';
@@ -48,7 +48,9 @@ export const webSearchAnswerInput = {
   language: z
     .string()
     .optional()
-    .describe('搜索语言偏好，如 zh-CN、en、all。不传则自动判断'),
+    .describe(
+      '搜索语言偏好。一般不传：SearXNG 会按查询内容自动处理，显式指定（尤其 zh-CN）在部分引擎上反而收窄召回导致空结果。',
+    ),
   categories: z
     .string()
     .optional()
@@ -72,6 +74,8 @@ export const webSearchAnswerDescription = `搜索关键词，抓取多个结果�
 
 - 一次完成「搜索 + 抓取 + AI 分析」全流程
 - 搜索后并行抓取前 N 个结果的页面正文（自动处理 WAF 拦截）
+- 空结果时服务端自动逐级放宽参数重试（去 language / 换引擎），并附带诊断信息与建议
+- 查询写成空格分隔的关键词，不要用完整句子或 OR / 引号 / site: 等搜索运算符
 - 将所有正文作为 context 交给 AI，针对你的问题给出精简回答
 - 返回的是 AI 的综合回答（几百字），不是原始搜索列表
 
@@ -106,10 +110,11 @@ export function registerWebSearchAnswer(server: McpServer): void {
         };
       }
 
-      // 2. 搜索
+      // 2. 搜索（带降级重试链）
       let results;
+      let searchDiagnostics;
       try {
-        results = await searchProvider.search(query, {
+        const outcome = await searchWithFallback(query, {
           maxResults: searchMaxResults,
           timeRange: timeRange as 'day' | 'month' | 'year' | undefined,
           language,
@@ -117,6 +122,8 @@ export function registerWebSearchAnswer(server: McpServer): void {
           engines,
           preferredSites: preferred_sites,
         });
+        results = outcome.results;
+        searchDiagnostics = outcome.diagnostics;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return {
@@ -127,7 +134,7 @@ export function registerWebSearchAnswer(server: McpServer): void {
 
       if (results.length === 0) {
         return {
-          content: [{ type: 'text', text: `未找到与「${query}」相关的结果。${buildEmptyHint(categories, engines)}` }],
+          content: [{ type: 'text', text: buildEmptyReport(query, searchDiagnostics) }],
         };
       }
 

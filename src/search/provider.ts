@@ -29,7 +29,38 @@ export interface SearchResult {
   score?: number;
 }
 
+/** 单次搜索尝试的记录（供空结果诊断输出） */
+export interface SearchAttempt {
+  /** 参数组合的简述，如 "原参数" / "去掉 language" / "engines=bing,google" */
+  label: string;
+  /** 本次请求实际使用的 language（未传为 undefined） */
+  language?: string;
+  /** 本次请求实际使用的 engines（未传为 undefined） */
+  engines?: string;
+  /** 本次请求实际使用的 categories（未传为 undefined） */
+  categories?: string;
+  /** 返回条数；请求抛错时为 -1（原因见 error） */
+  resultCount: number;
+  /** 请求抛错时的错误摘要 */
+  error?: string;
+}
+
+/** 搜索过程诊断：尝试了什么、哪些引擎无响应 */
+export interface SearchDiagnostics {
+  attempts: SearchAttempt[];
+  /** SearXNG 报告无响应的引擎名（跨尝试去重） */
+  unresponsiveEngines: string[];
+}
+
+/** 带诊断的搜索结果 */
+export interface SearchOutcome {
+  results: SearchResult[];
+  diagnostics: SearchDiagnostics;
+}
+
 /** 搜索后端抽象 */
 export interface SearchProvider {
   search(query: string, options?: SearchOptions): Promise<SearchResult[]>;
+  /** 带诊断信息的搜索（search 的超集，降级重试链使用） */
+  searchDetailed(query: string, options?: SearchOptions): Promise<SearchOutcome>;
 }

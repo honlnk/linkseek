@@ -2,7 +2,13 @@ import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { fetch } from 'undici';
 import { internalAgent } from '../fetch/dispatcher.js';
-import type { SearchProvider, SearchResult, SearchOptions, TimeRange } from './provider.js';
+import type {
+  SearchProvider,
+  SearchResult,
+  SearchOptions,
+  SearchOutcome,
+  TimeRange,
+} from './provider.js';
 
 /**
  * SearXNG 响应中的单条结果字段（仅声明我们用到的）。
@@ -22,17 +28,26 @@ interface SearXngResponse {
   results?: SearXngResult[];
   unresponsive_engines?: unknown[];
 }
-
 /**
  * SearXNG 搜索适配器。
  *
  * 调用 GET /search?q=...&format=json，需在 settings.yml 中启用 search.formats: [json]。
  * SearXNG 无 API Key 鉴权，靠网络隔离保护（容器内网 + Nginx 限制来源）。
+ *
+ * language 参数只在调用方显式传入时才发给 SearXNG：
+ * 实测强制推断（纯中文→zh-CN）会把空结果率从 ~8% 拉到 ~32%（zh-CN 在部分引擎上收窄召回），
+ * 不传时 SearXNG 自身的 default_lang: auto 处理得更稳。Accept-Language 头仍按推断值发送，
+ * 只影响开启了 send_accept_language_header 的引擎，无副作用。
  */
 export class SearXngProvider implements SearchProvider {
   constructor(private readonly baseUrl: string = config.SEARXNG_URL) {}
 
   async search(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
+    const { results } = await this.searchDetailed(query, options);
+    return results;
+  }
+
+  async searchDetailed(query: string, options: SearchOptions = {}): Promise<SearchOutcome> {
     const {
       maxResults = 10,
       timeRange,
@@ -42,29 +57,26 @@ export class SearXngProvider implements SearchProvider {
       engines,
     } = options;
 
-    // 语言推断：用户显式传的 language 优先，没传则按 query 内容启发式判断
-    const effectiveLang = language || detectLanguage(query);
-
     const params = new URLSearchParams({
       q: query,
       format: 'json',
       pageno: String(page),
       safesearch: '0',
     });
-    // language 仅在有值时设置（空字符串会导致 SearXNG 返回 400）
-    if (effectiveLang) params.set('language', effectiveLang);
+    // language 仅在显式传入时设置（空字符串会导致 SearXNG 返回 400）
+    if (language) params.set('language', language);
     if (timeRange) params.set('time_range', timeRange);
     if (categories) params.set('categories', categories);
     if (engines) params.set('engines', engines);
 
     const url = `${this.baseUrl}/search?${params}`;
-    logger.debug({ url, query, effectiveLang }, 'SearXNG 搜索请求');
+    logger.debug({ url, query, language: language || '(auto)' }, 'SearXNG 搜索请求');
 
     const response = await fetch(url, {
       headers: {
         Accept: 'application/json',
-        // Accept-Language 配合 effectiveLang，让 SearXNG 的 default_lang: auto 判断更准
-        'Accept-Language': toAcceptLanguage(effectiveLang),
+        // Accept-Language 按显式值或推断值发送，配合 SearXNG 的 default_lang: auto
+        'Accept-Language': toAcceptLanguage(language || detectLanguage(query)),
       },
       dispatcher: internalAgent, // SearXNG 是可信内网服务，不走代理也不做 SSRF 拦截
       signal: AbortSignal.timeout(15_000),
@@ -80,12 +92,10 @@ export class SearXngProvider implements SearchProvider {
     const data = (await response.json()) as SearXngResponse;
     const raw = data.results ?? [];
 
-    // 记录无响应引擎（不阻塞主流程，仅告警）
-    if (data.unresponsive_engines && data.unresponsive_engines.length > 0) {
-      logger.warn(
-        { query, unresponsive_engines: data.unresponsive_engines },
-        '部分搜索引擎无响应',
-      );
+    // 收集无响应引擎（不同 SearXNG 版本的结构不同：元组 / 对象 / 字符串都兼容）
+    const unresponsiveEngines = normalizeUnresponsiveEngines(data.unresponsive_engines);
+    if (unresponsiveEngines.length > 0) {
+      logger.warn({ query, unresponsiveEngines }, '部分搜索引擎无响应');
     }
 
     // 按有效 score 降序排序（原始 score + 来源权威性 bonus + 用户优先域名提权）
@@ -121,19 +131,52 @@ export class SearXngProvider implements SearchProvider {
     }
 
     logger.info({ query, count: results.length }, 'SearXNG 搜索完成');
-    return results;
+    return {
+      results,
+      diagnostics: {
+        attempts: [
+          {
+            label: '原参数',
+            language: language || undefined,
+            engines,
+            categories,
+            resultCount: results.length,
+          },
+        ],
+        unresponsiveEngines,
+      },
+    };
   }
 }
 
 /**
- * 按 query 内容启发式判断语言。
- * - 只含 CJK 字符 → zh-CN（CJK 引擎覆盖好，中文结果质量高）
- * - 只含拉丁字母/数字/符号 → en（避免被中文引擎带偏）
- * - 中文与拉丁字母同时出现（如 "Claude Code 使用方法"）→ all
- *   混合查询强制单一语言会丢失另一半有效结果，交给 SearXNG 跨语言召回更稳
- * - 无法判断（纯数字/符号）→ ''（交给 SearXNG auto）
- *
- * 用户显式传入 language 时本函数不会被调用（见 search() 中的 effectiveLang 推导）。
+ * 归一化 SearXNG 的 unresponsive_engines 字段。
+ * 不同版本返回结构不同： [["google", "error msg"], ...] / [{"engine": "google", ...}, ...] / ["google", ...]
+ */
+function normalizeUnresponsiveEngines(raw: unknown[] | undefined): string[] {
+  if (!raw || raw.length === 0) return [];
+  const names = new Set<string>();
+  for (const entry of raw) {
+    let name: unknown;
+    if (Array.isArray(entry)) name = entry[0];
+    else if (entry && typeof entry === 'object') {
+      const obj = entry as Record<string, unknown>;
+      name = obj.engine ?? obj.name;
+    } else {
+      name = entry;
+    }
+    if (typeof name === 'string' && name.trim()) names.add(name.trim());
+  }
+  return [...names];
+}
+
+/**
+ * 按 query 内容启发式判断语言，仅用于 Accept-Language 请求头。
+ * 不再用于设置 SearXNG 的 language 参数（那会收窄部分引擎的召回，见类注释）。
+ * - 只含 CJK 字符 → zh-CN
+ * - 只含拉丁字母/数字/符号 → en
+ * - 混合 → all（中英并重）
+ * - 无法判断 → ''（用通用偏好）
  */
 function detectLanguage(query: string): string {
   const hasCJK = /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(query);
