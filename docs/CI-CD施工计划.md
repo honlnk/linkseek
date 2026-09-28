@@ -1,6 +1,6 @@
 # linkseek CI/CD（GitHub Actions + Docker Hub + 服务器脚本化发布）—— 施工计划
 
-> 状态：施工中——阶段 1、2 已完成（门禁全绿），待阶段 3 首发演练（依赖用户打 tag）
+> 状态：**已完工**（2026-09-29 验收通过：v0.2.0/v0.2.1 双版本发布 + 回滚实证，详见施工日志）
 > 定稿：2026-09-29 与用户对齐（方案选型：GitHub Actions + 继续用 Docker Hub + ssh 到 volcano-honlnk 执行发布脚本；借鉴 ~/work/jiyacr 的云效 Flow 方案思路，逐项映射到 GitHub 生态）
 > 前置调研：jiyacr 方案的核心资产是「tag 驱动构建 + 语义化镜像版本钉在服务器 .env + deploy-release.sh（备份/健康检查/回滚）」，该脚本不依赖任何云厂商，可近乎原样移植。
 
@@ -157,3 +157,21 @@ push tag v* → GitHub Actions：
 - `gh secret set` 写入 VOLCANO_SSH_KEY / VOLCANO_HOST / VOLCANO_USER / DOCKERHUB_USERNAME（DOCKERHUB_TOKEN 由用户先行配置）
 - `gh secret list` 五项齐全 ✅；服务器 `backups/` 目录已建
 - 无偏差
+
+### 2026-09-29 | 阶段 3：首发演练 + 回滚实证（全链路验收）
+
+**发布流程**（按用户指定：PR → 合 main → 打 tag）：
+- CI/CD 批次 + v0.2.0 bump 提交到 dev（PR #2），merge commit `a982e9c`，tag `v0.2.0`
+- release run `36473048472`：校验/类型检查/构建推送/发布到生产四 job 全绿
+- 服务器核验 ✅：`linkseek-app` 运行 `honlnk/linkseek:0.2.0`、`.env` 多出 `APP_IMAGE_TAG=0.2.0`、`backups/pre-release-*.sql.gz` 生成、`.last-deployed-linkseek=0.2.0`、`/health` 返回 ok、admin 站 200
+
+**回滚实证**（计划阶段 3 第 4 步）：
+- v0.2.1 版本基线经 PR #3（`a49c2fc`）合入并发布成功（run `36473879738`，gha 缓存已热，构建明显加速）
+- deploy.yml workflow_dispatch `version=0.2.0`（run `36474671251`）✅：服务器回到 0.2.0，健康检查通过——**回滚路径经真实执行验证，非纸面能力**
+- 再 `version=0.2.1`（run `36474818877`）✅：恢复最新版，最终态 0.2.1 + 健康
+- 副产物：backups/ 积累 4 份 pre-release 备份（保 5 策略内，下次发布自动裁剪）
+
+**偏差与备注**：
+1. v0.2.0 内容范围：dev 全量合入（含异步任务系统 `7d4212a` 与 CORS 修复 `660edd6`）；另一在途批次的未提交改动（README + 门户页工具文档）**有意排除**，未混入发布提交。后续补记：该批次在窗口期内被提交为 `0f57840`，位于 v0.2.1 bump 之前，**已随 PR #3 / v0.2.1 上线**（纯文档改动，即异步计划中「随部署批次一起做」项，结果符合其本意）
+2. CI 构建告警（不影响功能，记录备查）：actions Node 20 弃用提示、ubuntu-latest 将于 2026-10-19 迁移 Ubuntu 26——届时如构建异常先查这两个公告
+3. 验收清单全部通过；「回滚实证」从降级项升级为真实执行项
