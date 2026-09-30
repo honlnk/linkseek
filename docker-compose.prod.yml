@@ -15,6 +15,23 @@
 # - mysql/searxng：不映射宿主机端口（仅容器间通信，安全）
 #
 # 使用方式：docker compose -f docker-compose.prod.yml up -d
+#
+# 日志上限（2026-09-30 磁盘事故根治）：json-file 驱动默认不限量，两个网关的访问日志
+# 曾膨胀到 5.1G/4.8G 拖垮磁盘余量（v0.2.4 发布被 2G 闸门拦截过一次）。
+# 网关 100m×3（访问日志约 60MB/天，约保留 5 天），其余服务 50m×3。
+# honlnk-gateway 不在本 compose 内（手工 docker run），上限配置见其 run.sh。
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+x-gateway-logging: &gateway-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "3"
 
 services:
   gateway:
@@ -23,6 +40,7 @@ services:
     image: nginx:stable-alpine
     container_name: linkseek-gateway
     restart: unless-stopped
+    logging: *gateway-logging
     volumes:
       - ./nginx/linkseek-gateway.conf:/etc/nginx/conf.d/linkseek-gateway.conf:ro
       - ./ssl:/etc/nginx/ssl:ro
@@ -37,6 +55,7 @@ services:
     image: honlnk/linkseek:${APP_IMAGE_TAG:-latest}
     container_name: linkseek-app
     restart: unless-stopped
+    logging: *default-logging
     # 应用运行时配置（含密码）从独立文件读取，该文件不进 git（.gitignore 屏蔽 env/）
     # docker compose 会自动读取同目录 .env 拿 MYSQL_* 变量给 mysql 容器
     env_file: env/app.env
@@ -55,6 +74,7 @@ services:
     image: mysql:8.0
     container_name: linkseek-mysql
     restart: unless-stopped
+    logging: *default-logging
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: linkseek
@@ -75,6 +95,7 @@ services:
     image: searxng/searxng:latest
     container_name: linkseek-searxng
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - ./searxng/settings.yml:/etc/searxng/settings.template.yml:ro
       - ./searxng/docker-entrypoint.sh:/docker-entrypoint.sh:ro
@@ -97,6 +118,7 @@ services:
     image: ghcr.io/browserless/chromium:latest
     container_name: linkseek-browser-fetch
     restart: unless-stopped
+    logging: *default-logging
     environment:
       # 单次会话最大超时（毫秒）；须 > app 侧 BROWSER_FETCH_TIMEOUT（180s），留出连接建立余量
       - TIMEOUT=200000
