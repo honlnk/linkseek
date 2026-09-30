@@ -117,29 +117,28 @@ pnpm web:dev
 2. 在「Key 管理」新建一个 Key（明文只显示一次，立即保存）
 3. 接入 AI 工具，二选一：
 
-   **一键接入（推荐）**：把下面这段话复制给你的 AI 编程工具（先把占位符换成你的实例地址和 Key，本地部署即 `http://localhost:7300`），它会自己完成 MCP 配置和配套技能安装：
+   **一键接入（推荐）**：把下面这段话原样复制给你的 AI 编程工具即可——它会先向你要实例地址和 API Key（并告知三条获取途径），然后自己完成 MCP 配置与技能安装（本地部署的话实例地址就是 `http://localhost:7300`）：
 
    ```text
-   请为我接入 linkseek——自托管的联网搜索/网页抓取 MCP 服务，并一并安装它的配套使用技能，完成后向我报告。
+   请帮我接入 linkseek——自托管的联网搜索/网页抓取 MCP 服务，并安装它的配套使用技能。
 
-   我的服务信息：
-   - 实例地址：https://你的实例地址
-   - API Key：你的_API_Key（鉴权：HTTP 请求头 Authorization: Bearer 你的_API_Key）
+   第一步：确认服务信息。检查我在对话中是否已给出「实例地址 + API Key」；如果没有，停下来向我询问，并顺带告诉我获取方式（三选一）：
+   1. 自己部署：linkseek 开源免费，服务器或本地电脑均可（官方文档页有 5 分钟部署指南）
+   2. 借用他人部署：找已部署 linkseek 的人，请他在管理后台为你创建一对 API Key
+   3. 体验通道：到 github.com/honlnk/linkseek 的 Issues 联系作者，申请体验用 Key
+   拿到实例地址和 API Key 之前不要进行后续步骤。
 
-   请完成两件事：
+   第二步：添加远程 MCP 服务器。名称 linkseek，Streamable HTTP 传输，URL 为实例地址，鉴权头 Authorization: Bearer 你的Key。按你所在环境的标准方式写入：
+   - ZCode：~/.zcode/cli/config.json 的 mcp.servers，形如 {"type":"http","url":"...","headers":{"Authorization":"Bearer ..."}}，timeoutMs 建议 200000（web_research 深度研究全程 1-3 分钟）
+   - Claude Code：claude mcp add --transport http linkseek 实例地址 --header "Authorization: Bearer Key"
+   - Claude Desktop / Cursor / Continue 等：mcpServers 配置节，url 与 headers 同上
 
-   1. 添加远程 MCP 服务器：名称 linkseek，Streamable HTTP 传输，URL 为上面的实例地址，带上述鉴权头，按你所在环境的标准方式写入：
-      - ZCode：~/.zcode/cli/config.json 的 mcp.servers，形如 {"type":"http","url":"...","headers":{"Authorization":"Bearer ..."}}，timeoutMs 建议 200000（web_research 深度研究全程 1-3 分钟）
-      - Claude Code：claude mcp add --transport http linkseek 实例地址 --header "Authorization: Bearer Key"
-      - Claude Desktop / Cursor / Continue 等：mcpServers 配置节，url 与 headers 同上
+   第三步：安装配套技能——只装 linkseek-usage 这一个，不要把技能仓库里的其他技能装进技能目录。
+   git clone --depth 1 https://github.com/honlnk/honlnk-skills /tmp/honlnk-skills
+   把 /tmp/honlnk-skills/skills/linkseek-usage 复制到你的技能目录（ZCode：~/.agents/skills/；Claude Code：~/.claude/skills/；其他 Agent：对应的技能发现目录），完成后删除 /tmp/honlnk-skills。
+   该技能承载「怎么用好这套工具」：工具选型、查询写法、空结果应对、异步任务用法。
 
-   2. 安装配套技能 linkseek-usage（教 Agent 用好这套工具：工具选型、查询写法、空结果应对、异步任务用法）：
-      git clone https://github.com/honlnk/honlnk-skills ~/honlnk-skills
-      - ZCode：执行 ~/honlnk-skills/install.sh（自动接入 ~/.agents/skills/）
-      - Claude Code：把 ~/honlnk-skills/skills/linkseek-usage 复制或链接到 ~/.claude/skills/
-      - 其他 Agent：复制到你的技能发现目录（SKILL.md 为通用 frontmatter 格式）
-
-   完成后重载配置或重启会话，确认工具列表出现 linkseek 的 web_search / web_fetch 等工具即为接入成功。
+   全部完成后重载配置或重启会话，确认工具列表出现 linkseek 的 web_search / web_fetch 等工具即为接入成功，并向我报告结果。
    ```
 
    **手动配置**：
