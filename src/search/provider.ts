@@ -31,7 +31,13 @@ export interface SearchResult {
 
 /** 单次搜索尝试的记录（供空结果诊断输出） */
 export interface SearchAttempt {
-  /** 参数组合的简述，如 "原参数" / "去掉 language" / "engines=bing,google" */
+  /**
+   * 尝试类别：searxng（默认，降级链参数组）/ commercial（商业兜底引擎）。
+   * 约定：commercial 尝试的 language/engines/categories 字段不适用、置 undefined——
+   * 这些是 SearXNG 参数语义，商业引擎没有对应概念。
+   */
+  kind?: 'searxng' | 'commercial';
+  /** 参数组合的简述，如 "原参数" / "去掉 language" / "engines=bing,google"；商业兜底形如 "商业兜底:devin" */
   label: string;
   /** 本次请求实际使用的 language（未传为 undefined） */
   language?: string;

@@ -36,6 +36,11 @@ export async function setSetting(key: string, value: string): Promise<void> {
   });
 }
 
+/** 删除配置项（不存在时静默） */
+export async function deleteSetting(key: string): Promise<void> {
+  await prisma.systemSetting.deleteMany({ where: { key } });
+}
+
 /** 读全部配置项（管理台设置页用） */
 export async function listSettings(): Promise<Record<string, string>> {
   const rows = await prisma.systemSetting.findMany();
