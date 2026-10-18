@@ -15,11 +15,11 @@ import {
   clearDevinToken,
   completeDevinLogin,
 } from '../search/commercial/devin.js';
+import { braveEngine, SETTING_KEY_BRAVE_API_KEY } from '../search/commercial/brave.js';
 import {
   commercialManager,
   loadEngineEntries,
   saveEngineEntries,
-  SETTING_KEY_BRAVE_API_KEY,
   type CommercialEngineEntry,
 } from '../search/commercial/manager.js';
 import type { CommercialEngineStatus } from '../search/commercial/types.js';
@@ -131,6 +131,7 @@ export function createSettingsRouter(): Router {
       } else {
         await deleteSetting(SETTING_KEY_BRAVE_API_KEY);
       }
+      braveEngine.reset(); // 重新保存 Key 时清除熔断标记
     }
     res.json(await readSearchFallbackState());
   });

@@ -2,6 +2,7 @@ import { getSetting, setSetting } from '../../lib/settings.js';
 import { logger } from '../../utils/logger.js';
 import type { SearchAttempt, SearchResult } from '../provider.js';
 import { devinEngine } from './devin.js';
+import { braveEngine } from './brave.js';
 import type { CommercialEngine, CommercialEngineStatus } from './types.js';
 
 /**
@@ -13,8 +14,6 @@ import type { CommercialEngine, CommercialEngineStatus } from './types.js';
  */
 
 export const SETTING_KEY_COMMERCIAL_ENGINES = 'commercialEngines';
-/** Brave Search API Key（阶段三 brave.ts 读取；后台设置页先打通存储） */
-export const SETTING_KEY_BRAVE_API_KEY = 'braveSearchApiKey';
 
 /** 引擎列表条目 */
 export interface CommercialEngineEntry {
@@ -147,7 +146,10 @@ export class CommercialManager {
  * 进程内单例。新增引擎 = 实现类 + 在此登记（设计方案 4.5）。
  * 注意：registry 里的引擎 id 必须与后台 commercialEngines 列表里的 id 一致。
  */
-export const commercialManager = new CommercialManager({ devin: devinEngine });
+export const commercialManager = new CommercialManager({
+  devin: devinEngine,
+  brave: braveEngine,
+});
 
 /** fallback.ts 的调用入口（屏蔽单例细节） */
 export function runCommercialFallback(

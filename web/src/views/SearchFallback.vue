@@ -305,7 +305,7 @@ onMounted(load);
             {{ braveConfigured ? '已配置（出于安全不回显，输入新值可覆盖）' : '未配置' }}。
             免费额度 2000 次/月，在
             <a href="https://api-dashboard.search.brave.com/" target="_blank" rel="noopener">Brave API Dashboard</a>
-            申请。本页仅存储凭证，引擎在阶段三上线后生效。
+            申请。保存后把 Brave 加入引擎列表即可参与兜底。
           </span>
           <NSpace align="center">
             <NInput

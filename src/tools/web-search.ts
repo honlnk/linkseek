@@ -42,6 +42,12 @@ export const webSearchInput = {
     .describe(
       '优先展示的域名列表，如 ["github.com", "react.dev"]。传域名而非完整 URL；匹配域名及其子域名的结果会排在前面。指定网站不在搜索结果中时不会凭空生成结果。',
     ),
+  provider: z
+    .enum(['auto', 'cloud'])
+    .optional()
+    .describe(
+      '搜索路径：auto（默认）走 SearXNG 降级链、全空后按后台配置尝试商业引擎兜底；cloud 跳过 SearXNG 直接使用商业搜索引擎（消耗部署者配置的商业引擎额度，仅在明确需要更高召回质量时使用，如降级链结果质量不理想或预判查询对 SearXNG 不友好）。未配置商业引擎时 cloud 返回空。',
+    ),
 };
 
 export const webSearchDescription = `联网搜索，返回关键词匹配的网页列表。
@@ -59,22 +65,27 @@ export const webSearchDescription = `联网搜索，返回关键词匹配的网�
 如何选择参数：
 - 技术类问题 → categories=it
 - 学术论文 → categories=science
-- 需要特定官网或站点优先 → preferred_sites=["example.com"]`;
+- 需要特定官网或站点优先 → preferred_sites=["example.com"]
+- 对召回质量要求极高 / 多次搜索结果不理想 → provider='cloud'（商业引擎，消耗额度，慎用）`;
 
 export function registerWebSearch(server: McpServer): void {
   server.registerTool(
     'web_search',
     { description: webSearchDescription, inputSchema: webSearchInput },
-    async ({ query, maxResults, timeRange, language, categories, engines, preferred_sites }) => {
+    async ({ query, maxResults, timeRange, language, categories, engines, preferred_sites, provider }) => {
       try {
-        const { results, diagnostics } = await searchWithFallback(query, {
-          maxResults,
-          timeRange: timeRange as 'day' | 'month' | 'year' | undefined,
-          language,
-          categories,
-          engines,
-          preferredSites: preferred_sites,
-        });
+        const { results, diagnostics } = await searchWithFallback(
+          query,
+          {
+            maxResults,
+            timeRange: timeRange as 'day' | 'month' | 'year' | undefined,
+            language,
+            categories,
+            engines,
+            preferredSites: preferred_sites,
+          },
+          provider ?? 'auto',
+        );
 
         if (results.length === 0) {
           return {
