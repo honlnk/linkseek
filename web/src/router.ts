@@ -38,6 +38,11 @@ export const router = createRouter({
           name: 'task-settings',
           component: () => import('./views/TaskSettings.vue'),
         },
+        {
+          path: 'search-fallback',
+          name: 'search-fallback',
+          component: () => import('./views/SearchFallback.vue'),
+        },
       ],
     },
   ],
