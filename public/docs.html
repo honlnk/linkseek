@@ -242,8 +242,8 @@
       <div class="tool-grid">
         <div class="tool-card">
           <span class="tool-name">web_search</span>
-          <div class="tool-desc">联网搜索关键词，返回结构化结果（标题、URL、摘要）。支持按分类、引擎、时间、语言过滤，结果按相关性 + 来源权威性排序，自动去重。</div>
-          <div class="tool-params">参数：<code>query</code> <code>maxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code></div>
+          <div class="tool-desc">联网搜索关键词，返回结构化结果（标题、URL、摘要）。支持按分类、引擎、时间、语言过滤，结果按相关性 + 来源权威性排序，自动去重。若部署者在后台配置了商业兜底引擎（默认关闭），降级链全空时自动兜底，也可用 provider='cloud' 直打商业引擎。</div>
+          <div class="tool-params">参数：<code>query</code> <code>maxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code> <code>provider</code></div>
         </div>
         <div class="tool-card">
           <span class="tool-name">web_fetch</span>
