@@ -6,7 +6,8 @@ services:
     container_name: linkseek-mysql
     restart: unless-stopped
     ports:
-      - "3306:3306"
+      # 宿主映射到 3388，把 3306 留给本机通用 MySQL 容器，二者互不冲突
+      - "3388:3306"
     environment:
       MYSQL_ROOT_PASSWORD: rootpass_dev_only
       MYSQL_DATABASE: linkseek
