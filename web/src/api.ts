@@ -109,9 +109,11 @@ export interface CommercialEngineEntry {
 /** GET/PUT /settings/search-fallback */
 export interface SearchFallbackState {
   engines: CommercialEngineEntry[];
-  /** 全部已注册引擎（含名称与凭证状态，token 不回明文） */
+  /** 全部已注册引擎（含名称与凭证状态，token 不回明文）；数组顺序即默认优先级 */
   catalog: Array<{ id: string; name: string; status: EngineStatus }>;
   brave: { configured: boolean };
+  exa: { configured: boolean };
+  deepseek: { configured: boolean };
 }
 
 /** Key 维度 AI 成本（GET /stats/ai-cost） */

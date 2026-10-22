@@ -17,8 +17,9 @@ import { api, type CommercialEngineEntry, type SearchFallbackState } from '../ap
 /**
  * 搜索兜底设置页（商业引擎）。
  *
- * 三个区域：引擎列表管理（启停/上下移排序，本期不做拖拽）、Devin 登录卡片
- * （粘贴码 OAuth）、Brave API Key。全部 opt-in：列表为空 = 兜底整体关闭（默认）。
+ * 两大区域：引擎列表管理（启停/上下移排序，加入时按目录默认优先级插入）、
+ * 各引擎凭证卡片（Devin 粘贴码 OAuth + Exa/DeepSeek/Brave API Key）。
+ * 全部 opt-in：列表为空 = 兜底整体关闭（默认）。
  */
 const message = useMessage();
 const loading = ref(true);
@@ -28,6 +29,8 @@ const savingEngines = ref(false);
 const engines = ref<CommercialEngineEntry[]>([]);
 const catalog = ref<SearchFallbackState['catalog']>([]);
 const braveConfigured = ref(false);
+const exaConfigured = ref(false);
+const deepseekConfigured = ref(false);
 
 const devinStatus = computed(() => catalog.value.find((c) => c.id === 'devin')?.status);
 /** 可加入列表的引擎（已在列表里的不重复出现） */
@@ -43,6 +46,8 @@ async function load() {
     engines.value = s.engines.map((e) => ({ ...e }));
     catalog.value = s.catalog;
     braveConfigured.value = s.brave.configured;
+    exaConfigured.value = s.exa.configured;
+    deepseekConfigured.value = s.deepseek.configured;
   } catch (err) {
     message.error(err instanceof Error ? err.message : '加载失败');
   } finally {
@@ -57,10 +62,22 @@ function move(index: number, delta: -1 | 1) {
   [list[index], list[target]] = [list[target], list[index]];
 }
 
+/** 按目录顺序（默认优先级）把新引擎插到合适位置，而不是简单追加到末尾 */
 function addEngine() {
   const id = addTarget.value;
   if (!id) return;
-  engines.value.push({ id, enabled: true });
+  const order = catalog.value.map((c) => c.id);
+  const newRank = order.indexOf(id);
+  let insertAt = engines.value.length;
+  if (newRank >= 0) {
+    for (let i = 0; i < engines.value.length; i++) {
+      if (order.indexOf(engines.value[i].id) > newRank) {
+        insertAt = i;
+        break;
+      }
+    }
+  }
+  engines.value.splice(insertAt, 0, { id, enabled: true });
   addTarget.value = null;
 }
 
@@ -174,30 +191,49 @@ async function logoutDevin() {
   }
 }
 
-// ---- Brave API Key ----
+// ---- API Key 型引擎卡片（Brave / Exa / DeepSeek） ----
 
-const braveKey = ref('');
-const savingBrave = ref(false);
+type ApiKeyField = 'braveApiKey' | 'exaApiKey' | 'deepseekApiKey';
 
-async function saveBrave(clear = false) {
-  const value = clear ? '' : braveKey.value.trim();
+const keyInputs = ref<Record<ApiKeyField, string>>({
+  braveApiKey: '',
+  exaApiKey: '',
+  deepseekApiKey: '',
+});
+const savingKeys = ref<Record<ApiKeyField, boolean>>({
+  braveApiKey: false,
+  exaApiKey: false,
+  deepseekApiKey: false,
+});
+
+const configuredMap = computed<Record<ApiKeyField, boolean>>(() => ({
+  braveApiKey: braveConfigured.value,
+  exaApiKey: exaConfigured.value,
+  deepseekApiKey: deepseekConfigured.value,
+}));
+
+/** 保存/清除一个引擎的 API Key（空值 = 清除；保存后不回显明文） */
+async function saveEngineKey(field: ApiKeyField, engineLabel: string, clear = false) {
+  const value = clear ? '' : keyInputs.value[field].trim();
   if (!clear && !value) {
-    message.warning('请输入 Brave Search API Key');
+    message.warning(`请输入 ${engineLabel} API Key`);
     return;
   }
-  savingBrave.value = true;
+  savingKeys.value[field] = true;
   try {
-    await api('/settings/search-fallback', {
+    const s = await api<SearchFallbackState>('/settings/search-fallback', {
       method: 'PUT',
-      body: JSON.stringify({ braveApiKey: value }),
+      body: JSON.stringify({ [field]: value }),
     });
-    braveConfigured.value = !clear && Boolean(value);
-    braveKey.value = '';
-    message.success(clear ? 'Brave Key 已清除' : 'Brave Key 已保存');
+    braveConfigured.value = s.brave.configured;
+    exaConfigured.value = s.exa.configured;
+    deepseekConfigured.value = s.deepseek.configured;
+    keyInputs.value[field] = '';
+    message.success(clear ? `${engineLabel} Key 已清除` : `${engineLabel} Key 已保存`);
   } catch (err) {
     message.error(err instanceof Error ? err.message : '保存失败');
   } finally {
-    savingBrave.value = false;
+    savingKeys.value[field] = false;
   }
 }
 
@@ -299,24 +335,96 @@ onMounted(load);
         </NSpace>
       </NCard>
 
+      <NCard title="Exa API Key">
+        <NSpace vertical :size="12">
+          <span class="hint">
+            {{ configuredMap.exaApiKey ? '已配置（出于安全不回显，输入新值可覆盖）' : '未配置' }}。
+            语义检索，与 Devin 引擎同源但走官方 API。在
+            <a href="https://dashboard.exa.ai/" target="_blank" rel="noopener">Exa Dashboard</a>
+            申请（注册即有免费额度，无需绑卡）。保存后把 Exa 加入引擎列表即可参与兜底。
+          </span>
+          <NSpace align="center">
+            <NInput
+              v-model:value="keyInputs.exaApiKey"
+              type="password"
+              show-password-on="click"
+              placeholder="Exa API Key"
+              style="width: 360px"
+            />
+            <NButton type="primary" :loading="savingKeys.exaApiKey" @click="saveEngineKey('exaApiKey', 'Exa')">保存</NButton>
+            <NButton
+              v-if="configuredMap.exaApiKey"
+              quaternary
+              type="error"
+              :loading="savingKeys.exaApiKey"
+              @click="saveEngineKey('exaApiKey', 'Exa', true)"
+            >
+              清除
+            </NButton>
+          </NSpace>
+        </NSpace>
+      </NCard>
+
+      <NCard title="DeepSeek Search API Key">
+        <NSpace vertical :size="12">
+          <span class="hint">
+            {{ configuredMap.deepseekApiKey ? '已配置（出于安全不回显，输入新值可覆盖）' : '未配置' }}。
+            按成功请求计费（$0.75/千次，失败不扣费），平台余额人民币充值、无需国际信用卡，在
+            <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">DeepSeek 开放平台</a>
+            创建。保存后把 DeepSeek 搜索加入引擎列表即可参与兜底。
+          </span>
+          <NSpace align="center">
+            <NInput
+              v-model:value="keyInputs.deepseekApiKey"
+              type="password"
+              show-password-on="click"
+              placeholder="DeepSeek API Key（sk- 开头）"
+              style="width: 360px"
+            />
+            <NButton
+              type="primary"
+              :loading="savingKeys.deepseekApiKey"
+              @click="saveEngineKey('deepseekApiKey', 'DeepSeek')"
+            >
+              保存
+            </NButton>
+            <NButton
+              v-if="configuredMap.deepseekApiKey"
+              quaternary
+              type="error"
+              :loading="savingKeys.deepseekApiKey"
+              @click="saveEngineKey('deepseekApiKey', 'DeepSeek', true)"
+            >
+              清除
+            </NButton>
+          </NSpace>
+        </NSpace>
+      </NCard>
+
       <NCard title="Brave Search API Key">
         <NSpace vertical :size="12">
           <span class="hint">
-            {{ braveConfigured ? '已配置（出于安全不回显，输入新值可覆盖）' : '未配置' }}。
-            免费额度 2000 次/月，在
+            {{ configuredMap.braveApiKey ? '已配置（出于安全不回显，输入新值可覆盖）' : '未配置' }}。
+            $5/千次，每月赠送 $5 额度（约 1000 次免费）；注册需绑国际信用卡，在
             <a href="https://api-dashboard.search.brave.com/" target="_blank" rel="noopener">Brave API Dashboard</a>
             申请。保存后把 Brave 加入引擎列表即可参与兜底。
           </span>
           <NSpace align="center">
             <NInput
-              v-model:value="braveKey"
+              v-model:value="keyInputs.braveApiKey"
               type="password"
               show-password-on="click"
               placeholder="Brave Search API Key"
               style="width: 360px"
             />
-            <NButton type="primary" :loading="savingBrave" @click="saveBrave(false)">保存</NButton>
-            <NButton v-if="braveConfigured" quaternary type="error" :loading="savingBrave" @click="saveBrave(true)">
+            <NButton type="primary" :loading="savingKeys.braveApiKey" @click="saveEngineKey('braveApiKey', 'Brave')">保存</NButton>
+            <NButton
+              v-if="configuredMap.braveApiKey"
+              quaternary
+              type="error"
+              :loading="savingKeys.braveApiKey"
+              @click="saveEngineKey('braveApiKey', 'Brave', true)"
+            >
               清除
             </NButton>
           </NSpace>

@@ -16,6 +16,8 @@ import {
   completeDevinLogin,
 } from '../search/commercial/devin.js';
 import { braveEngine, SETTING_KEY_BRAVE_API_KEY } from '../search/commercial/brave.js';
+import { exaEngine, SETTING_KEY_EXA_API_KEY } from '../search/commercial/exa.js';
+import { deepseekEngine, SETTING_KEY_DEEPSEEK_API_KEY } from '../search/commercial/deepseek.js';
 import {
   commercialManager,
   loadEngineEntries,
@@ -75,15 +77,39 @@ export function createSettingsRouter(): Router {
     engines: CommercialEngineEntry[];
     catalog: Array<{ id: string; name: string; status: CommercialEngineStatus }>;
     brave: { configured: boolean };
+    exa: { configured: boolean };
+    deepseek: { configured: boolean };
+  }
+
+  /** API-Key 型引擎的保存/清除（空串 = 清除；重保存时清熔断标记） */
+  async function saveApiKeySetting(
+    keyName: string,
+    value: string,
+    engine: { reset(): void },
+  ): Promise<void> {
+    if (value) {
+      await setSetting(keyName, value);
+    } else {
+      await deleteSetting(keyName);
+    }
+    engine.reset();
   }
 
   async function readSearchFallbackState(): Promise<SearchFallbackState> {
-    const [engines, catalog, braveKey] = await Promise.all([
+    const [engines, catalog, braveKey, exaKey, deepSeekKey] = await Promise.all([
       loadEngineEntries(),
       commercialManager.catalog(),
       getSetting(SETTING_KEY_BRAVE_API_KEY),
+      getSetting(SETTING_KEY_EXA_API_KEY),
+      getSetting(SETTING_KEY_DEEPSEEK_API_KEY),
     ]);
-    return { engines, catalog, brave: { configured: Boolean(braveKey?.trim()) } };
+    return {
+      engines,
+      catalog,
+      brave: { configured: Boolean(braveKey?.trim()) },
+      exa: { configured: Boolean(exaKey?.trim()) },
+      deepseek: { configured: Boolean(deepSeekKey?.trim()) },
+    };
   }
 
   /** GET /api/settings/search-fallback —— 引擎列表 + 各引擎状态（token 只回状态，不回明文） */
@@ -91,9 +117,14 @@ export function createSettingsRouter(): Router {
     res.json(await readSearchFallbackState());
   });
 
-  /** PUT /api/settings/search-fallback —— 更新引擎列表（顺序即数组顺序）与 Brave Key */
+  /** PUT /api/settings/search-fallback —— 更新引擎列表（顺序即数组顺序）与各引擎 API Key */
   router.put('/search-fallback', async (req, res) => {
-    const body = req.body as { engines?: unknown; braveApiKey?: unknown };
+    const body = req.body as {
+      engines?: unknown;
+      braveApiKey?: unknown;
+      exaApiKey?: unknown;
+      deepseekApiKey?: unknown;
+    };
     if (body.engines !== undefined) {
       if (!Array.isArray(body.engines)) {
         res.status(400).json({ error: 'engines 必须是数组' });
@@ -125,13 +156,13 @@ export function createSettingsRouter(): Router {
       await saveEngineEntries(entries);
     }
     if (typeof body.braveApiKey === 'string') {
-      const key = body.braveApiKey.trim();
-      if (key) {
-        await setSetting(SETTING_KEY_BRAVE_API_KEY, key);
-      } else {
-        await deleteSetting(SETTING_KEY_BRAVE_API_KEY);
-      }
-      braveEngine.reset(); // 重新保存 Key 时清除熔断标记
+      await saveApiKeySetting(SETTING_KEY_BRAVE_API_KEY, body.braveApiKey.trim(), braveEngine);
+    }
+    if (typeof body.exaApiKey === 'string') {
+      await saveApiKeySetting(SETTING_KEY_EXA_API_KEY, body.exaApiKey.trim(), exaEngine);
+    }
+    if (typeof body.deepseekApiKey === 'string') {
+      await saveApiKeySetting(SETTING_KEY_DEEPSEEK_API_KEY, body.deepseekApiKey.trim(), deepseekEngine);
     }
     res.json(await readSearchFallbackState());
   });

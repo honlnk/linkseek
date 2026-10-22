@@ -2,6 +2,8 @@ import { getSetting, setSetting } from '../../lib/settings.js';
 import { logger } from '../../utils/logger.js';
 import type { SearchAttempt, SearchResult } from '../provider.js';
 import { devinEngine } from './devin.js';
+import { exaEngine } from './exa.js';
+import { deepseekEngine } from './deepseek.js';
 import { braveEngine } from './brave.js';
 import type { CommercialEngine, CommercialEngineStatus } from './types.js';
 
@@ -144,10 +146,14 @@ export class CommercialManager {
 
 /**
  * 进程内单例。新增引擎 = 实现类 + 在此登记（设计方案 4.5）。
- * 注意：registry 里的引擎 id 必须与后台 commercialEngines 列表里的 id 一致。
+ * 注意：registry 里的引擎 id 必须与后台 commercialEngines 列表里的 id 一致；
+ * 注册顺序即后台目录展示顺序与默认优先级（Devin → Exa → DeepSeek → Brave，
+ * 免费额度优先、需绑卡的 Brave 垫底；已保存的引擎列表顺序仍以用户排列为准）。
  */
 export const commercialManager = new CommercialManager({
   devin: devinEngine,
+  exa: exaEngine,
+  deepseek: deepseekEngine,
   brave: braveEngine,
 });
 
