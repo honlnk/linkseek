@@ -8,11 +8,12 @@ import { braveEngine } from './brave.js';
 import type { CommercialEngine, CommercialEngineStatus } from './types.js';
 
 /**
- * 商业兜底引擎管理器。
+ * 云端商业引擎管理器。
  *
- * 引擎列表存 SystemSetting（JSON 数组，顺序即兜底尝试顺序），后台可增删/启停/排序；
- * 空或未设置 = 兜底整体关闭（默认状态，未配置的部署完全无感）。
- * 单引擎失败静默继续下一个；全部失败不改变对外行为（由 fallback.ts 兜底语义保证）。
+ * 引擎列表存 SystemSetting（JSON 数组，顺序即尝试顺序），后台可增删/启停/排序；
+ * 2026-11 起云端引擎为默认第一顺位搜索（SearXNG 退居本地兜底），列表为空或未设置
+ * 时云端整体关闭（默认状态，直接走本地搜索）。
+ * 单引擎失败静默继续下一个；全部失败不改变对外行为（由 fallback.ts 编排本地兜底）。
  */
 
 export const SETTING_KEY_COMMERCIAL_ENGINES = 'commercialEngines';
@@ -25,7 +26,7 @@ export interface CommercialEngineEntry {
 
 export interface CommercialFallbackOutcome {
   results: SearchResult[];
-  /** 商业兜底尝试记录（kind='commercial'，由调用方并入 diagnostics.attempts） */
+  /** 云端引擎尝试记录（kind='commercial'，由调用方并入 diagnostics.attempts） */
   attempts: SearchAttempt[];
   /** 命中的引擎 id */
   hitEngine?: string;
@@ -34,7 +35,7 @@ export interface CommercialFallbackOutcome {
 /** 引擎列表读取（测试注入点） */
 export type EnginesConfigLoader = () => Promise<CommercialEngineEntry[]>;
 
-/** 从 SystemSetting 读引擎列表；未设置/损坏一律视为关闭（不因配置损坏拖垮搜索主链路） */
+/** 从 SystemSetting 读引擎列表；未设置/损坏一律视为云端关闭（不因配置损坏拖垮搜索主链路） */
 export async function loadEngineEntries(): Promise<CommercialEngineEntry[]> {
   const raw = await getSetting(SETTING_KEY_COMMERCIAL_ENGINES);
   if (!raw) return [];
@@ -51,7 +52,7 @@ export async function loadEngineEntries(): Promise<CommercialEngineEntry[]> {
     }
     return entries;
   } catch {
-    logger.warn('commercialEngines 配置损坏，商业兜底视为关闭');
+    logger.warn('commercialEngines 配置损坏，云端搜索视为关闭');
     return [];
   }
 }
@@ -81,12 +82,11 @@ export class CommercialManager {
   }
 
   /** 按列表顺序逐个尝试；命中即返回，单引擎异常静默继续 */
-  async runFallback(query: string, maxResults: number): Promise<CommercialFallbackOutcome> {
-    let entries: CommercialEngineEntry[];
+  async runFallback(query: string, maxResults: number): Promise<CommercialFallbackOutcome> {    let entries: CommercialEngineEntry[];
     try {
       entries = await this.loadConfig();
     } catch (err) {
-      logger.warn({ err: err instanceof Error ? err.message : String(err) }, '读取商业兜底引擎列表失败');
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, '读取云端引擎列表失败');
       return { results: [], attempts: [] };
     }
 
@@ -96,7 +96,7 @@ export class CommercialManager {
       const engine = this.registry[entry.id];
       if (!engine) {
         attempts.push({
-          label: `商业兜底:${entry.id}`,
+          label: `云端引擎:${entry.id}`,
           kind: 'commercial',
           resultCount: 0,
           error: '未知引擎（列表 id 无对应实现），已跳过',
@@ -111,7 +111,7 @@ export class CommercialManager {
       }
       if (!usable) {
         attempts.push({
-          label: `商业兜底:${engine.id}`,
+          label: `云端引擎:${engine.id}`,
           kind: 'commercial',
           resultCount: 0,
           error: '凭证缺失或已失效，跳过',
@@ -121,23 +121,23 @@ export class CommercialManager {
       try {
         const results = await engine.search(query, maxResults);
         attempts.push({
-          label: `商业兜底:${engine.id}`,
+          label: `云端引擎:${engine.id}`,
           kind: 'commercial',
           resultCount: results.length,
         });
         if (results.length > 0) {
-          logger.info({ query, engine: engine.id, count: results.length }, '商业兜底命中');
+          logger.info({ query, engine: engine.id, count: results.length }, '云端引擎命中');
           return { results, attempts, hitEngine: engine.id };
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         attempts.push({
-          label: `商业兜底:${engine.id}`,
+          label: `云端引擎:${engine.id}`,
           kind: 'commercial',
           resultCount: -1,
           error: message,
         });
-        logger.warn({ query, engine: engine.id, err: message }, '商业兜底引擎失败，继续尝试下一个');
+        logger.warn({ query, engine: engine.id, err: message }, '云端引擎失败，继续尝试下一个');
       }
     }
     return { results: [], attempts };

@@ -202,7 +202,7 @@ export async function runWebResearch(
     if (sources.size >= cfg.sources) break;
     ctx.setProgress(`第 ${round}/${cfg.rounds} 轮搜索（${roundQueries.join('；')}）`);
 
-    // a. 并行搜索本轮查询
+    // a. 并行搜索本轮查询（云端优先 + 本地兜底）
     const outcomes = await Promise.allSettled(
       roundQueries.slice(0, 3).map((q) =>
         searchWithFallback(q, {

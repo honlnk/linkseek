@@ -33,7 +33,7 @@ export const webSearchInput = {
     .string()
     .optional()
     .describe(
-      '指定搜索引擎（逗号分隔的引擎名或 shortcut）。常用：google、bing、duckduckgo（shortcut: ddg）、wikipedia、brave。不传则由 SearXNG 自动选择。仅在需要特定来源时使用，一般优先用 categories。',
+      '指定本地 SearXNG 引擎（逗号分隔的引擎名或 shortcut）：google、bing、duckduckgo（ddg）、wikipedia、brave 等。传了此参数会跳过云端商业引擎，直接用指定本地引擎搜索。不传则默认云端引擎优先（未命中自动回退本地）。',
     ),
   preferred_sites: z
     .array(z.string().min(1))
@@ -46,27 +46,25 @@ export const webSearchInput = {
     .enum(['auto', 'cloud'])
     .optional()
     .describe(
-      '搜索路径：auto（默认）走 SearXNG 降级链、全空后按后台配置尝试商业引擎兜底；cloud 跳过 SearXNG 直接使用商业搜索引擎（消耗部署者配置的商业引擎额度，仅在明确需要更高召回质量时使用，如降级链结果质量不理想或预判查询对 SearXNG 不友好）。未配置商业引擎时 cloud 返回空。',
+      '搜索路径（历史参数，现两者等价）：默认云端商业引擎优先，未命中自动回退本地 SearXNG 降级链。auto 与 cloud 行为一致，可不传；唯一走纯本地路径的方式是显式传 engines 指定本地引擎。',
     ),
 };
 
 export const webSearchDescription = `联网搜索，返回关键词匹配的网页列表。
 
-- 基于自托管 SearXNG 元搜索引擎，聚合多个搜索源（Google、Bing、Wikipedia 等）
-- 返回结构化结果：每条含标题、URL、摘要
-- 结果按相关性评分和来源权威性排序，自动去重
+- 默认云端商业引擎优先（后台配置的引擎列表），未命中自动回退本地 SearXNG 元搜索引擎（聚合 Google、Bing、Wikipedia 等多源并逐级放宽参数重试）
+- 返回结构化结果：每条含标题、URL、摘要，按相关性排序，自动去重
 - 可用 preferred_sites 指定优先域名，适合限定优先参考的官网、GitHub 仓库或文档站
-- 空结果时服务端会自动逐级放宽参数重试（去 language / 换引擎），返回中附带真实诊断信息（尝试过的参数组合、无响应引擎）和下一步建议
+- 空结果时返回完整诊断（云端与本地各自尝试过什么）和下一步建议
 
 如何写查询（重要）：
 - 用空格分隔的关键词，不要写完整句子（如 "Next.js 15 app router 迁移"）
 - 不要使用 OR / AND / 引号 / site: 等搜索运算符——部分引擎不支持，会导致 0 结果
 
 如何选择参数：
-- 技术类问题 → categories=it
-- 学术论文 → categories=science
+- 技术类问题 → categories=it；学术论文 → categories=science
 - 需要特定官网或站点优先 → preferred_sites=["example.com"]
-- 对召回质量要求极高 / 多次搜索结果不理想 → provider='cloud'（商业引擎，消耗额度，慎用）`;
+- 想强制走本地 SearXNG 的特定引擎 → 传 engines（如 "bing,google"）`;
 
 export function registerWebSearch(server: McpServer): void {
   server.registerTool(
