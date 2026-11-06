@@ -4,7 +4,7 @@ import type { CommercialEngine, CommercialEngineStatus } from './types.js';
 import type { SearchResult } from '../provider.js';
 
 /**
- * 商业兜底管理器单元测试（注入假引擎与假配置，不触 SystemSetting）。
+ * 云端商业引擎管理器单元测试（注入假引擎与假配置，不触 SystemSetting）。
  * 覆盖：列表为空整体关闭、enabled:false 跳过、前引擎失败静默续试、顺序严格按数组。
  */
 
@@ -74,8 +74,8 @@ describe('CommercialManager.runFallback', () => {
     const outcome = await manager.runFallback('q', 10);
     expect(order).toEqual(['a', 'b']);
     expect(outcome.attempts).toEqual([
-      { label: '商业兜底:a', kind: 'commercial', resultCount: -1, error: 'quota exhausted' },
-      { label: '商业兜底:b', kind: 'commercial', resultCount: 1 },
+      { label: '云端引擎:a', kind: 'commercial', resultCount: -1, error: 'quota exhausted' },
+      { label: '云端引擎:b', kind: 'commercial', resultCount: 1 },
     ]);
     expect(outcome.results).toHaveLength(1);
   });
@@ -103,7 +103,7 @@ describe('CommercialManager.runFallback', () => {
     const outcome = await manager.runFallback('q', 10);
     expect(a.state.searched).toBe(0);
     expect(outcome.attempts[0]).toMatchObject({
-      label: '商业兜底:a',
+      label: '云端引擎:a',
       kind: 'commercial',
       resultCount: 0,
       error: expect.stringContaining('凭证'),
@@ -120,7 +120,7 @@ describe('CommercialManager.runFallback', () => {
     );
     const outcome = await manager.runFallback('q', 10);
     expect(outcome.attempts[0]).toMatchObject({
-      label: '商业兜底:ghost',
+      label: '云端引擎:ghost',
       kind: 'commercial',
       error: expect.stringContaining('未知引擎'),
     });
@@ -135,7 +135,7 @@ describe('CommercialManager.runFallback', () => {
     expect(outcome.results).toEqual([]);
     expect(outcome.hitEngine).toBeUndefined();
     expect(outcome.attempts).toEqual([
-      { label: '商业兜底:a', kind: 'commercial', resultCount: 0 },
+      { label: '云端引擎:a', kind: 'commercial', resultCount: 0 },
     ]);
   });
 });

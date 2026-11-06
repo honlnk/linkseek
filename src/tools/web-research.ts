@@ -22,7 +22,7 @@ export const webResearchInput = {
 
 export const webResearchDescription = `深度研究一个中等复杂度的问题：服务器端跑完整研究流水线，你只需提交后取结果。
 
-- 流水线（Perplexica 式）：问题改写 → 多轮迭代搜索（空结果自动降级重试）→ LLM 筛选来源 →
+- 流水线（Perplexica 式）：问题改写 → 多轮迭代搜索（云端引擎优先，未命中回退本地降级链）→ LLM 筛选来源 →
   抓取正文（自动过 WAF）→ 长文分块蒸馏要点 → 充分性判断（不足自动补搜）→ 综合回答（附来源列表）
 - 纯异步工具：立即返回 taskId，全程约 1-3 分钟（fast 约 20-40 秒）；用 get_result 查进度取结果
 - 定位「不那么简单、也不那么复杂」的任务：简单事实查证直接用 web_search / web_search_answer（更快）；

@@ -1,10 +1,10 @@
 import type { SearchResult } from '../provider.js';
 
 /**
- * 商业兜底引擎的统一抽象。
+ * 云端商业引擎的统一抽象。
  *
- * 与 SearXNG 主链路解耦：降级链全空后由 manager 按后台列表逐个尝试，
- * 引擎自身负责凭证读取与失效熔断；新增引擎 = 实现本接口 + 在 manager 注册。
+ * 与 SearXNG 本地链解耦：统一搜索入口先按后台列表逐个尝试云端引擎（2026-11 起为
+ * 默认第一顺位），引擎自身负责凭证读取与失效熔断；新增引擎 = 实现本接口 + 在 manager 注册。
  */
 export interface CommercialEngine {
   /** 引擎标识（SystemSetting commercialEngines 列表里的 id），如 'devin' / 'brave' */

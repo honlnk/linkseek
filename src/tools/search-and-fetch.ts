@@ -61,9 +61,9 @@ export const searchAndFetchInput = {
 
 export const searchAndFetchDescription = `搜索关键词并自动获取前几个结果的页面正文，一次调用完成「搜索 + 获取」。
 
-- 先搜索获取结果列表，再并行抓取前 N 个页面的 Markdown 正文
+- 先搜索获取结果列表（默认云端引擎优先，未命中回退本地 SearXNG 降级链），再并行抓取前 N 个页面的 Markdown 正文
 - 单个页面获取失败不影响其他结果（失败项会标注原因），403/429/SPA 空正文自动降级浏览器渲染
-- 空结果时服务端自动逐级放宽参数重试（去 language / 换引擎），并附带诊断信息与建议
+- 空结果时返回完整诊断信息（云端与本地各自尝试过什么）与建议
 - 查询写成空格分隔的关键词，不要用完整句子或 OR / 引号 / site: 等搜索运算符
 - 耗时可达十几秒；不需要立刻拿结果时可传 defer=true 脱手，用返回的 taskId 稍后经 get_result 取
 - 适合需要快速获取多个来源内容的场景
@@ -122,7 +122,7 @@ export async function runSearchAndFetch(
     preferred_sites,
   } = input;
 
-  // 1. 搜索（带降级重试链）
+  // 1. 搜索（云端优先 + 本地兜底的统一路径）
   ctx.setProgress('搜索中');
   let results;
   let searchDiagnostics;

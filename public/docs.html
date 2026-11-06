@@ -242,7 +242,7 @@
       <div class="tool-grid">
         <div class="tool-card">
           <span class="tool-name">web_search</span>
-          <div class="tool-desc">联网搜索关键词，返回结构化结果（标题、URL、摘要）。支持按分类、引擎、时间、语言过滤，结果按相关性 + 来源权威性排序，自动去重。若部署者在后台配置了商业兜底引擎（默认关闭），降级链全空时自动兜底，也可用 provider='cloud' 直打商业引擎。</div>
+          <div class="tool-desc">联网搜索关键词，返回结构化结果（标题、URL、摘要）。默认云端商业引擎优先（后台配置），未命中自动回退本地 SearXNG 降级链；支持按分类、引擎、时间、语言过滤，结果按相关性 + 来源权威性排序，自动去重。传 engines 可点名本地引擎（跳过云端）。</div>
           <div class="tool-params">参数：<code>query</code> <code>maxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code> <code>provider</code></div>
         </div>
         <div class="tool-card">
@@ -299,7 +299,8 @@
       <ul class="feature-list">
         <li><strong>Streamable HTTP 传输</strong> — 裸域名直接接入，远程访问，无需本地进程</li>
         <li><strong>API Key 鉴权</strong> — Bearer Token，每个 Key 独立计量、可启停</li>
-        <li><strong>SearXNG 元搜索</strong> — 聚合 200+ 搜索源，支持按分类 / 引擎 / 时间 / 语言过滤，内置语言检测 + 来源权威性重排序</li>
+        <li><strong>云端引擎优先搜索</strong> — 默认按后台配置的商业引擎列表（Devin/Exa/DeepSeek/Brave）直接搜索，未命中自动回退本地</li>
+    <li><strong>SearXNG 本地元搜索兜底</strong> — 聚合 200+ 搜索源，支持按分类 / 引擎 / 时间 / 语言过滤，内置语言检测 + 来源权威性重排序</li>
         <li><strong>优先域名</strong> — <code>preferred_sites</code> 参数可指定优先参考的官网 / GitHub 仓库 / 文档站，命中域名及其子域自动提权</li>
         <li><strong>智能抓取降级</strong> — HTTP 抓取遇 403/429/WAF 挑战页/SPA 空正文时，自动降级到 stealth 无头浏览器渲染</li>
         <li><strong>多 LLM Provider</strong> — 后台可配置 OpenAI / Anthropic / Gemini 等，AI 增强工具自动启用，支持按工具切换模型</li>

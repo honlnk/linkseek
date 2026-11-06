@@ -53,7 +53,7 @@ const menuOptions: MenuOption[] = [
   { label: 'Key 管理', key: 'keys', icon: () => h(KeyIcon) },
   { label: 'AI 模型', key: 'llm-providers', icon: () => h(AiIcon) },
   { label: '任务设置', key: 'task-settings', icon: () => h(SettingsIcon) },
-  { label: '搜索兜底', key: 'search-fallback', icon: () => h(SearchIcon) },
+  { label: '搜索引擎', key: 'search-fallback', icon: () => h(SearchIcon) },
 ];
 
 function handleMenu(key: string) {

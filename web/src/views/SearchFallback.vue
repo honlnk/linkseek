@@ -15,11 +15,11 @@ import {
 import { api, type CommercialEngineEntry, type SearchFallbackState } from '../api.js';
 
 /**
- * 搜索兜底设置页（商业引擎）。
+ * 搜索引擎设置页（云端商业引擎）。
  *
  * 两大区域：引擎列表管理（启停/上下移排序，加入时按目录默认优先级插入）、
  * 各引擎凭证卡片（Devin 粘贴码 OAuth + Exa/DeepSeek/Brave API Key）。
- * 全部 opt-in：列表为空 = 兜底整体关闭（默认）。
+ * 列表为空 = 不使用云端引擎（搜索全部走本地 SearXNG）。
  */
 const message = useMessage();
 const loading = ref(true);
@@ -243,15 +243,15 @@ onMounted(load);
 <template>
   <NSpin :show="loading">
     <NSpace vertical :size="16">
-      <NCard title="搜索兜底引擎">
+      <NCard title="云端搜索引擎">
         <NSpace vertical :size="16">
           <NAlert type="info" :show-icon="true">
-            SearXNG 降级链全部走空时，按此列表顺序尝试商业搜索引擎兜底；列表为空 = 兜底关闭（默认）。
-            全部 opt-in：商业引擎消耗第三方账号额度，Devin 引擎为非官方用法（存在封号风险），公开实例建议保持关闭。
+            搜索默认按此列表顺序优先使用云端商业引擎，未命中时自动回退本地 SearXNG；列表为空 = 全部走本地搜索。
+            云端引擎消耗第三方账号额度（匿名免费搜索同样会消耗）；Devin 引擎为非官方用法（存在封号风险），公开实例请自行权衡。
           </NAlert>
 
           <div v-if="engines.length === 0" class="empty-hint">
-            尚未配置任何兜底引擎。从下方选择引擎加入列表。
+            尚未配置任何云端引擎，搜索全部走本地 SearXNG。从下方选择引擎加入列表。
           </div>
 
           <div v-for="(engine, index) in engines" :key="engine.id" class="engine-row">
@@ -341,7 +341,7 @@ onMounted(load);
             {{ configuredMap.exaApiKey ? '已配置（出于安全不回显，输入新值可覆盖）' : '未配置' }}。
             语义检索，与 Devin 引擎同源但走官方 API。在
             <a href="https://dashboard.exa.ai/" target="_blank" rel="noopener">Exa Dashboard</a>
-            申请（注册即有免费额度，无需绑卡）。保存后把 Exa 加入引擎列表即可参与兜底。
+            申请（注册即有免费额度，无需绑卡）。保存后把 Exa 加入引擎列表即可参与云端优先搜索。
           </span>
           <NSpace align="center">
             <NInput
@@ -371,7 +371,7 @@ onMounted(load);
             {{ configuredMap.deepseekApiKey ? '已配置（出于安全不回显，输入新值可覆盖）' : '未配置' }}。
             按成功请求计费（$0.75/千次，失败不扣费），平台余额人民币充值、无需国际信用卡，在
             <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">DeepSeek 开放平台</a>
-            创建。保存后把 DeepSeek 搜索加入引擎列表即可参与兜底。
+            创建。保存后把 DeepSeek 搜索加入引擎列表即可参与云端优先搜索。
           </span>
           <NSpace align="center">
             <NInput
@@ -407,7 +407,7 @@ onMounted(load);
             {{ configuredMap.braveApiKey ? '已配置（出于安全不回显，输入新值可覆盖）' : '未配置' }}。
             $5/千次，每月赠送 $5 额度（约 1000 次免费）；注册需绑国际信用卡，在
             <a href="https://api-dashboard.search.brave.com/" target="_blank" rel="noopener">Brave API Dashboard</a>
-            申请。保存后把 Brave 加入引擎列表即可参与兜底。
+            申请。保存后把 Brave 加入引擎列表即可参与云端优先搜索。
           </span>
           <NSpace align="center">
             <NInput

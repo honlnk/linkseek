@@ -74,8 +74,8 @@ export const webSearchAnswerInput = {
 export const webSearchAnswerDescription = `搜索关键词，抓取多个结果页面，用 AI 综合回答你的问题。
 
 - 一次完成「搜索 + 抓取 + AI 分析」全流程
-- 搜索后并行抓取前 N 个结果的页面正文（自动处理 WAF 拦截）
-- 空结果时服务端自动逐级放宽参数重试（去 language / 换引擎），并附带诊断信息与建议
+- 搜索默认云端引擎优先（未命中回退本地 SearXNG 降级链），之后并行抓取前 N 个结果的页面正文（自动处理 WAF 拦截）
+- 空结果时返回完整诊断信息（云端与本地各自尝试过什么）与建议
 - 查询写成空格分隔的关键词，不要用完整句子或 OR / 引号 / site: 等搜索运算符
 - 将所有正文作为 context 交给 AI，针对你的问题给出精简回答
 - 返回的是 AI 的综合回答（几百字），不是原始搜索列表
@@ -129,7 +129,7 @@ export async function runWebSearchAnswer(
     };
   }
 
-  // 2. 搜索（带降级重试链）
+  // 2. 搜索（云端优先 + 本地兜底的统一路径）
   ctx.setProgress('搜索中');
   let results;
   let searchDiagnostics;

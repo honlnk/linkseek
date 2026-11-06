@@ -38,8 +38,8 @@ linkseek 默认行为是「文档站 + MCP 服务」，后台管理是特例（�
 - ✅ 公开 REST API（`POST /v1/search` / `POST /v1/fetch`）：浏览器端直接调用，API Key 或匿名绿灯（Origin 白名单 + 日配额）两种鉴权
 - ✅ SSRF 防护（IP 范围拦截 + DNS rebinding 防护 + 重定向逐跳校验）
 - ✅ HTML → Markdown 转换（正文提取 + 噪音去除）
-- ✅ SearXNG 元搜索引擎集成
-- ✅ 商业搜索引擎兜底（opt-in，默认关闭）：SearXNG 降级链全空后按后台配置的引擎列表自动尝试 Devin (Exa) / Exa 官方 API / DeepSeek Search / Brave Search（目录默认优先级 Devin → Exa → DeepSeek → Brave）；`web_search` 支持 `provider='cloud'` 直打商业引擎。注意：Devin 引擎为非官方用法（以 Windsurf 客户端形态调用内部 API，存在 ToS/封号风险），每个部署者用自己的账号自负其责，公开实例建议保持关闭
+- ✅ 云端搜索引擎优先：默认按后台配置的引擎列表直接使用商业搜索（Devin (Exa) / Exa 官方 API / DeepSeek Search / Brave Search，目录默认优先级 Devin → Exa → DeepSeek → Brave），未命中自动回退本地 SearXNG 降级链；列表为空 = 全部走本地。`web_search` 的 `engines` 参数可点名本地引擎（跳过云端）。注意：Devin 引擎为非官方用法（以 Windsurf 客户端形态调用内部 API，存在 ToS/封号风险），每个部署者用自己的账号自负其责，公开实例请自行权衡额度消耗
+- ✅ SearXNG 本地元搜索引擎兜底（聚合 Google、Bing、Wikipedia 等 200+ 搜索源，空结果自动逐级放宽参数重试）
 - ✅ 多 LLM Provider（OpenAI / Anthropic / Gemini / OpenAI Responses 协议），AI 工具可按调用切换模型，token 用量与成本自动记账
 
 ### 管理后台（网页端）
@@ -47,7 +47,7 @@ linkseek 默认行为是「文档站 + MCP 服务」，后台管理是特例（�
 - ✅ Key 管理：创建 / 列表 / 启停 / 删除
 - ✅ LLM Provider 管理：多协议接入、默认模型、启停
 - ✅ 任务设置：每 Key / 全局并发上限，保存即生效
-- ✅ 搜索兜底：商业引擎列表管理（启停/排序，加入时按默认优先级插入）+ Devin OAuth 登录（粘贴码）+ Exa / DeepSeek / Brave API Key，凭证只存服务端不回显明文
+- ✅ 搜索引擎：云端商业引擎列表管理（启停/排序，加入时按默认优先级插入）+ Devin OAuth 登录（粘贴码）+ Exa / DeepSeek / Brave API Key，凭证只存服务端不回显明文
 - ✅ 请求总览：总请求数、按工具分布、近 14 天趋势
 - ✅ Key AI 成本：按 Key 聚合的 AI 请求数 / 输入输出 token / 成本
 - ✅ 单 Key 用量统计：按工具分布 + 趋势图
