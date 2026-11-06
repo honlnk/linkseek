@@ -40,7 +40,7 @@ const GREENLIGHT_DISABLED_MESSAGE =
 const searchBodySchema = z.object({
   query: z.string().min(1),
   maxResults: z.number().int().min(1).max(30).optional(),
-  timeRange: z.enum(['day', 'month', 'year']).optional(),
+  timeRange: z.enum(['day', 'week', 'month', 'year']).optional(),
   language: z.string().optional(),
   categories: z.string().optional(),
   engines: z.string().optional(),

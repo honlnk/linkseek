@@ -1,5 +1,5 @@
-/** SearXNG 支持的时间范围（注意：没有 week） */
-export type TimeRange = 'day' | 'month' | 'year';
+/** SearXNG 支持的时间范围。week 仅视频类引擎（bilibili）支持，general 引擎传 week 会被整体跳过 */
+export type TimeRange = 'day' | 'week' | 'month' | 'year';
 
 export interface SearchOptions {
   /** 最大返回结果数，默认 10 */
@@ -23,6 +23,10 @@ export interface SearchResult {
   url: string;
   /** 摘要片段 */
   snippet: string;
+  /** 作者（SearXNG 部分引擎提供；B 站场景为 UP 主。商业引擎与多数 general 引擎无此字段） */
+  author?: string;
+  /** 发布时间原样字符串（如 "2026-10-25T08:53:12"，解析层不加工；取不到则 undefined） */
+  publishedDate?: string;
   /** 来源引擎 */
   engines?: string[];
   /** SearXNG 综合评分（跨引擎合并后计算，仅用于排序参考） */

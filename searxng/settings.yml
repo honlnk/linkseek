@@ -32,3 +32,10 @@ outgoing:
   # 占位符 __SEARXNG_PROXY__ 在 searxng/docker-entrypoint.sh 中被 sed 替换。
   proxies:
     all://: __SEARXNG_PROXY__
+
+# 按需启用的引擎（use_default_settings 合并语义下仅覆盖列出的项，其余引擎配置不动）。
+# bilibili：B 站视频搜索（2026-11-06 接入，详见 docs/B站搜索接入-开发计划.md），
+# 默认镜像已内置该引擎与 time_range 过滤，此处仅启用；归属 videos 分类。
+engines:
+  - name: bilibili
+    disabled: false

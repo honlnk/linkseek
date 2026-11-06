@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { timeRangeValues } from '../search/searxng.js';
+import type { TimeRange } from '../search/provider.js';
 import { searchWithFallback } from '../search/fallback.js';
 import { buildEmptyReport } from '../search/empty-hint.js';
+import { formatAuthorDateLine } from '../search/result-format.js';
 import { fetchPageAsMarkdown, FetchError } from '../fetch/http-fetch.js';
 import { isLowQualityContent } from '../fetch/content-quality.js';
 import { browserFetchProvider } from '../fetch/browser-fetch.js';
@@ -30,7 +32,9 @@ export const searchAndFetchInput = {
   timeRange: z
     .enum(timeRangeValues as [string, ...string[]])
     .optional()
-    .describe('时间范围过滤：day / month / year'),
+    .describe(
+      '时间范围过滤：day / month / year / week（一周内，仅视频类引擎如 bilibili 支持；general 引擎传 week 会被跳过，通用时效过滤请用 day/month/year）',
+    ),
   language: z
     .string()
     .optional()
@@ -41,13 +45,13 @@ export const searchAndFetchInput = {
     .string()
     .optional()
     .describe(
-      '搜索分类（逗号分隔），按内容类型缩小范围。常用值：general（默认）、it（技术/开发）、science（学术）、news（新闻）、images（图片）、videos（视频）、files（文件下载）。不传则用 general。',
+      '搜索分类（逗号分隔），按内容类型缩小范围。常用值：general（默认）、it（技术/开发）、science（学术）、news（新闻）、images（图片）、videos（视频，含 B 站等视频源）、files（文件下载）。不传则用 general。',
     ),
   engines: z
     .string()
     .optional()
     .describe(
-      '指定搜索引擎（逗号分隔）：google、bing、ddg、wikipedia 等。不传则自动选择。',
+      '指定搜索引擎（逗号分隔）：google、bing、ddg、wikipedia、bilibili（B 站视频，搜 B 站内容 → engines="bilibili"）等。不传则自动选择。',
     ),
   preferred_sites: z
     .array(z.string().min(1))
@@ -129,7 +133,7 @@ export async function runSearchAndFetch(
   try {
     const outcome = await searchWithFallback(query, {
       maxResults: searchMaxResults,
-      timeRange: timeRange as 'day' | 'month' | 'year' | undefined,
+      timeRange: timeRange as TimeRange | undefined,
       language,
       categories,
       engines,
@@ -168,7 +172,10 @@ export async function runSearchAndFetch(
   for (let i = 0; i < targets.length; i++) {
     const r = targets[i];
     const fr = fetchResults[i];
-    const header = `## ${i + 1}. ${r.title}\nURL: ${r.url}\n摘要: ${r.snippet}`;
+    // bilibili 等引擎的结果在 URL 行后带「作者｜发布」元信息行
+    const meta = formatAuthorDateLine(r);
+    const metaLine = meta ? `\n${meta}` : '';
+    const header = `## ${i + 1}. ${r.title}\nURL: ${r.url}${metaLine}\n摘要: ${r.snippet}`;
 
     if (fr.status === 'fulfilled') {
       // 检测 WAF 挑战页 / 乱码内容

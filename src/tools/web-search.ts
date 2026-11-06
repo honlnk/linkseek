@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { timeRangeValues } from '../search/searxng.js';
+import type { TimeRange } from '../search/provider.js';
 import { searchWithFallback } from '../search/fallback.js';
 import { buildEmptyReport } from '../search/empty-hint.js';
+import { formatAuthorDateLine } from '../search/result-format.js';
 
 export const webSearchInput = {
   query: z.string().min(1).describe('搜索关键词'),
@@ -16,7 +18,9 @@ export const webSearchInput = {
   timeRange: z
     .enum(timeRangeValues as [string, ...string[]])
     .optional()
-    .describe('时间范围过滤：day（一天内）/ month（一月内）/ year（一年内）'),
+    .describe(
+      '时间范围过滤：day（一天内）/ month（一月内）/ year（一年内）/ week（一周内，仅视频类引擎如 bilibili 支持；general 搜索引擎普遍不支持 week，传了会导致引擎被跳过、召回变窄，通用时效过滤请用 day/month/year）',
+    ),
   language: z
     .string()
     .optional()
@@ -27,13 +31,13 @@ export const webSearchInput = {
     .string()
     .optional()
     .describe(
-      '搜索分类（逗号分隔），按内容类型缩小范围。常用值：general（默认）、it（技术/开发）、science（学术）、news（新闻）、images（图片）、videos（视频）、files（文件下载）。不传则用 general。',
+      '搜索分类（逗号分隔），按内容类型缩小范围。常用值：general（默认）、it（技术/开发）、science（学术）、news（新闻）、images（图片）、videos（视频，含 B 站等视频源）、files（文件下载）。不传则用 general。',
     ),
   engines: z
     .string()
     .optional()
     .describe(
-      '指定本地 SearXNG 引擎（逗号分隔的引擎名或 shortcut）：google、bing、duckduckgo（ddg）、wikipedia、brave 等。传了此参数会跳过云端商业引擎，直接用指定本地引擎搜索。不传则默认云端引擎优先（未命中自动回退本地）。',
+      '指定本地 SearXNG 引擎（逗号分隔的引擎名或 shortcut）：google、bing、duckduckgo（ddg）、wikipedia、brave、bilibili 等。搜 B 站视频 → engines="bilibili"（结果带作者与发布时间）。传了此参数会跳过云端商业引擎，直接用指定本地引擎搜索。不传则默认云端引擎优先（未命中自动回退本地）。',
     ),
   preferred_sites: z
     .array(z.string().min(1))
@@ -76,7 +80,7 @@ export function registerWebSearch(server: McpServer): void {
           query,
           {
             maxResults,
-            timeRange: timeRange as 'day' | 'month' | 'year' | undefined,
+            timeRange: timeRange as TimeRange | undefined,
             language,
             categories,
             engines,
@@ -91,11 +95,12 @@ export function registerWebSearch(server: McpServer): void {
           };
         }
 
-        // 格式化为 AI 友好的文本
-        const lines = results.map(
-          (r, i) =>
-            `## ${i + 1}. ${r.title}\nURL: ${r.url}\n${r.snippet}`,
-        );
+        // 格式化为 AI 友好的文本（bilibili 等引擎的结果在 URL 行后带「作者｜发布」元信息行）
+        const lines = results.map((r, i) => {
+          const meta = formatAuthorDateLine(r);
+          const head = `## ${i + 1}. ${r.title}\nURL: ${r.url}`;
+          return meta ? `${head}\n${meta}\n${r.snippet}` : `${head}\n${r.snippet}`;
+        });
         const text = `找到 ${results.length} 条结果：\n\n${lines.join('\n\n')}`;
 
         return { content: [{ type: 'text', text }] };
