@@ -18,6 +18,10 @@ interface SearXngResult {
   url?: string;
   title?: string;
   content?: string;
+  /** 作者（B 站为 UP 主等）。上游不保证字段存在或类型，解析处宽容处理 */
+  author?: unknown;
+  /** 发布时间原样字符串。上游不保证字段存在或类型，解析处宽容处理 */
+  publishedDate?: unknown;
   engines?: string[];
   score?: number;
   category?: string;
@@ -124,6 +128,9 @@ export class SearXngProvider implements SearchProvider {
         title: r.title,
         url: r.url,
         snippet: r.content?.trim() || '',
+        // author/publishedDate 宽容透出：非字符串/缺失/空白 → undefined（商业引擎路径同样不设置）
+        author: asOptionalString(r.author),
+        publishedDate: asOptionalString(r.publishedDate),
         engines: r.engines,
         score: r.score,
       });
@@ -356,5 +363,10 @@ function canonicalizeUrl(url: string): string {
 /** 进程内单例 */
 export const searchProvider: SearchProvider = new SearXngProvider();
 
-/** 供 zod 引用的 time_range 枚举 */
-export const timeRangeValues: TimeRange[] = ['day', 'month', 'year'];
+/** 供 zod 引用的 time_range 枚举（week 仅 bilibili 等视频类引擎支持） */
+export const timeRangeValues: TimeRange[] = ['day', 'week', 'month', 'year'];
+
+/** 宽容提取可选字符串字段：非字符串/空白 → undefined */
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}

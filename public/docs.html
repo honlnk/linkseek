@@ -242,7 +242,7 @@
       <div class="tool-grid">
         <div class="tool-card">
           <span class="tool-name">web_search</span>
-          <div class="tool-desc">联网搜索关键词，返回结构化结果（标题、URL、摘要）。默认云端商业引擎优先（后台配置），未命中自动回退本地 SearXNG 降级链；支持按分类、引擎、时间、语言过滤，结果按相关性 + 来源权威性排序，自动去重。传 engines 可点名本地引擎（跳过云端）。</div>
+          <div class="tool-desc">联网搜索关键词，返回结构化结果（标题、URL、摘要）。默认云端商业引擎优先（后台配置），未命中自动回退本地 SearXNG 降级链；支持按分类、引擎、时间、语言过滤，结果按相关性 + 来源权威性排序，自动去重。传 engines 可点名本地引擎（跳过云端），如 engines="bilibili" 搜 B 站视频（结果带 UP 主与发布时间）。</div>
           <div class="tool-params">参数：<code>query</code> <code>maxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code> <code>provider</code></div>
         </div>
         <div class="tool-card">
@@ -404,7 +404,7 @@ git clone --depth 1 https://github.com/honlnk/honlnk-skills /tmp/honlnk-skills
           <tr><th>工具</th><th>必填</th><th>可选</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>web_search</code></td><td><code>query</code></td><td><code>maxResults</code> <code>timeRange</code>(day/month/year) <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code></td></tr>
+          <tr><td><code>web_search</code></td><td><code>query</code></td><td><code>maxResults</code> <code>timeRange</code>(day/week/month/year) <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code></td></tr>
           <tr><td><code>web_fetch</code></td><td><code>url</code></td><td>—</td></tr>
           <tr><td><code>web_search_and_fetch</code></td><td><code>query</code></td><td><code>fetchCount</code> <code>searchMaxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferred_sites</code> <code>defer</code></td></tr>
           <tr><td><code>web_fetch_render</code></td><td><code>url</code></td><td><code>defer</code></td></tr>
@@ -429,13 +429,13 @@ git clone --depth 1 https://github.com/honlnk/honlnk-skills /tmp/honlnk-skills
           <tr><td><code>defer</code></td><td>设为 <code>true</code> 脱手执行：立即返回 <code>taskId</code> 不阻塞等待，之后用 <code>get_result</code> 取结果（四个慢工具可用）</td></tr>
           <tr><td><code>taskId</code></td><td>异步任务 ID（<code>task_</code> 开头），来自 <code>defer: true</code> 调用或 <code>web_research</code> 的返回</td></tr>
           <tr><td><code>depth</code></td><td>研究深度：<code>fast</code>（1 轮搜索 3 来源，最快）/ <code>standard</code>（3 轮 5 来源，默认）/ <code>deep</code>（5 轮 8 来源，最全面）</td></tr>
-          <tr><td><code>categories</code></td><td>搜索分类（逗号分隔）。常用：<code>general</code> / <code>it</code> / <code>science</code> / <code>news</code> / <code>images</code></td></tr>
-          <tr><td><code>engines</code></td><td>指定搜索引擎（逗号分隔）。常用：<code>google</code> / <code>bing</code> / <code>ddg</code> / <code>wikipedia</code></td></tr>
+          <tr><td><code>categories</code></td><td>搜索分类（逗号分隔）。常用：<code>general</code> / <code>it</code> / <code>science</code> / <code>news</code> / <code>images</code> / <code>videos</code>（视频，含 B 站）</td></tr>
+          <tr><td><code>engines</code></td><td>指定搜索引擎（逗号分隔）。常用：<code>google</code> / <code>bing</code> / <code>ddg</code> / <code>wikipedia</code> / <code>bilibili</code>（B 站视频，结果带 UP 主与发布时间）</td></tr>
           <tr><td><code>preferred_sites</code></td><td>优先域名列表（数组，最多 10 个），如 <code>["github.com", "react.dev"]</code></td></tr>
           <tr><td><code>maxResults</code></td><td>最大返回结果数（1-30，默认 10）</td></tr>
           <tr><td><code>fetchCount</code></td><td>抓取前 N 个结果正文（1-10，默认 3）</td></tr>
           <tr><td><code>searchMaxResults</code></td><td>搜索结果总数（1-30，默认 10）</td></tr>
-          <tr><td><code>timeRange</code></td><td>时间范围：<code>day</code> / <code>month</code> / <code>year</code></td></tr>
+          <tr><td><code>timeRange</code></td><td>时间范围：<code>day</code> / <code>month</code> / <code>year</code> / <code>week</code>（一周内，仅视频类引擎如 bilibili 支持；general 引擎传 week 会被跳过，通用时效过滤请用 day/month/year）</td></tr>
           <tr><td><code>language</code></td><td>搜索语言偏好，如 <code>zh-CN</code> / <code>en</code> / <code>all</code>；不传则自动判断</td></tr>
         </tbody>
       </table>
@@ -476,7 +476,7 @@ git clone --depth 1 https://github.com/honlnk/honlnk-skills /tmp/honlnk-skills
           <tr><th>端点</th><th>请求体</th><th>说明</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>POST /v1/search</code></td><td><code>query</code> 必填；可选 <code>maxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferredSites</code></td><td>返回 <code>{ query, count, results[] }</code>；无结果时附 <code>hint</code> 诊断建议</td></tr>
+          <tr><td><code>POST /v1/search</code></td><td><code>query</code> 必填；可选 <code>maxResults</code> <code>timeRange</code> <code>language</code> <code>categories</code> <code>engines</code> <code>preferredSites</code></td><td>返回 <code>{ query, count, results[] }</code>（结果含可选 <code>author</code> / <code>publishedDate</code> 字段，bilibili 等引擎提供）；无结果时附 <code>hint</code> 诊断建议</td></tr>
           <tr><td><code>POST /v1/fetch</code></td><td><code>url</code> 必填；可选 <code>render: "auto"</code></td><td>返回 <code>{ finalUrl, statusCode, content, truncated, renderedBy }</code>；<code>render:"auto"</code> 时普通抓取命中低质量判定（WAF 挑战页/极短/低文本密度）自动升级浏览器渲染，响应 <code>renderedBy</code> 为 <code>http</code> 或 <code>browser</code></td></tr>
         </tbody>
       </table>

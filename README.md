@@ -39,7 +39,7 @@ linkseek 默认行为是「文档站 + MCP 服务」，后台管理是特例（�
 - ✅ SSRF 防护（IP 范围拦截 + DNS rebinding 防护 + 重定向逐跳校验）
 - ✅ HTML → Markdown 转换（正文提取 + 噪音去除）
 - ✅ 云端搜索引擎优先：默认按后台配置的引擎列表直接使用商业搜索（Devin (Exa) / Exa 官方 API / DeepSeek Search / Brave Search，目录默认优先级 Devin → Exa → DeepSeek → Brave），未命中自动回退本地 SearXNG 降级链；列表为空 = 全部走本地。`web_search` 的 `engines` 参数可点名本地引擎（跳过云端）。注意：Devin 引擎为非官方用法（以 Windsurf 客户端形态调用内部 API，存在 ToS/封号风险），每个部署者用自己的账号自负其责，公开实例请自行权衡额度消耗
-- ✅ SearXNG 本地元搜索引擎兜底（聚合 Google、Bing、Wikipedia 等 200+ 搜索源，空结果自动逐级放宽参数重试）
+- ✅ SearXNG 本地元搜索引擎兜底（聚合 Google、Bing、Wikipedia 等 200+ 搜索源，空结果自动逐级放宽参数重试）；支持 B 站视频搜索——`engines="bilibili"` 直查 B 站（结果带 UP 主与发布时间），`timeRange=week` 限定一周内
 - ✅ 多 LLM Provider（OpenAI / Anthropic / Gemini / OpenAI Responses 协议），AI 工具可按调用切换模型，token 用量与成本自动记账
 
 ### 管理后台（网页端）
@@ -174,7 +174,7 @@ curl http://localhost:7300 \
 
 | 工具 | 功能 | 关键参数 |
 |------|------|---------|
-| `web_search` | 联网搜索 | `query`, `maxResults`, `timeRange`(day/month/year), `language` |
+| `web_search` | 联网搜索 | `query`, `maxResults`, `timeRange`(day/week/month/year), `language`, `engines`(如 `bilibili` 搜 B 站视频), `categories` |
 | `web_fetch` | 获取网页正文（Markdown） | `url` |
 | `web_search_and_fetch` | 搜索 + 批量获取正文 | `query`, `fetchCount`, `searchMaxResults`, `defer` |
 | `web_fetch_render` | 无头浏览器渲染获取 JS 动态页面（SPA），返回 Markdown | `url`, `defer` |
