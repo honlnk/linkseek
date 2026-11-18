@@ -1,6 +1,6 @@
 # B 站搜索接入开发计划
 
-> 状态：进行中（阶段一、二、三完成；阶段四发版部署待用户指令，2026-11-06）
+> 状态：已完成（2026-11-06，v0.4.0 已发版上线，验收五项全过）
 > 日期：2026-11-06
 > 目标：接入 bilibili 视频搜索——启用 SearXNG 自带的 bilibili 引擎，透出作者与发布时间字段，补充 week 时间档，并让 AI 调用方能发现并正确使用该能力。
 > 范围：SearXNG 配置、搜索结果字段透出、三个 MCP 搜索工具与公开 API 的参数和输出、文档与 linkseek-usage 技能同步、发版部署与线上验收。
@@ -202,3 +202,18 @@ AI 调用方通过三层描述发现能力，服务端不加启发式路由：
   - 本仓库 docs(search): 文案同步与本计划施工日志（本笔）
   - 本仓库 chore(release): v0.4.0（package.json，紧随其后）
 - **按项目执行规范暂停点**：打 tag `v0.4.0` / push（触发 CI 构建部署）/ ssh 服务器重启 searxng 容器 / 线上验收（验收表 3、4、5）均属对外不可逆操作，等用户明示后执行。重启影响与低峰选择见计划四.2。
+
+### 2026-11-06 阶段四：发版部署与线上验收（用户确认后执行，全部通过）
+
+- **tag 归属偏差（流程补课）**：初次按 dev 分支提交打 tag v0.4.0 → CI `validate` 任务拒绝（release.yml 校验 tag 必须在 main 分支上，release run 42169876527 失败于「校验 tag」，构建与部署任务未执行，生产未受影响）。修正流程：删除误置 tag → dev 经 PR #9 合入 main（merge commit `531958d`）→ 在 merge commit 上重新打 tag → release run `42170017234` 全绿（校验 + 类型检查 + 构建推 Docker Hub + rsync 配置 + deploy-release.sh 发布 v0.4.0）。计划未写明「tag 须打在 main」，此处为计划与仓库 CI 约定的偏差，已按仓库惯例修正。
+- **searxng 重启命令偏差**：计划四.2 的 `up -d searxng` 不生效（bind-mount 模板变更不触发 compose 重建，容器保持 Running 旧配置），改用部署指南既有命令 `up -d --force-recreate searxng` 重建生效。rsync 已先行同步新 settings.yml（服务器侧确认 engines 块就位）。
+- honlnk-skills `901b114` 与本仓库 dev 分支已随用户确认一起 push。
+- **线上验收结论（验收表六项全过）**：
+  1. 本地 engines=bilibili（阶段一，含 author/publishedDate）✅
+  2. 单测与构建（56/56 + typecheck + build）✅
+  3. MCP 端到端：生产 MCP 端点 JSON-RPC 直连 `web_search(engines="bilibili", timeRange="week")`——week 枚举被 v0.4.0 schema 接受并透传，返回结果全部落在近 7 天且带「作者｜发布」行 ✅
+  4. 通用搜索回归：线上 `/v1/search` 不传 engines 的常规查询（「人工智能 最新进展」）返回 5 条云端引擎结果、无异常诊断，云端优先路径未受影响 ✅
+  5. 公开 API：`POST /v1/search` engines=bilibili 返回 JSON 含 author/publishedDate 原样字符串 ✅（注：计划验收表述写 GET，实际部署契约为 POST——与代码及公开文档一致，系计划笔误）
+  6. 文档/技能：README、门户页 docs.html、部署指南、linkseek-usage 均含 B 站用法 ✅（阶段三 grep 复查）
+- **验收过程记录**：#3 经会话内 MCP 工具验证时连续误传 timeRange=month（调用方参数失误，非服务端问题；month 路径亦验证了字段透出），最终改用 curl 直连 MCP 协议端点、JSON 字面量显式写 "week" 完成原始口径验收；服务器容器内另以 `time_range=week` 直查确认过滤生效（20 条全部在近 7 天）。
+- 降级预案未触发（重启后 bilibili 引擎响应正常，无需回滚）。
